@@ -173,7 +173,7 @@ function effect(e){
 const nm = p => p==="a"?S.nameA:S.nameB;
 function owesText(bal){
   if(Math.abs(bal)<0.005) return null;
-  return bal>0 ? S.nameB+" חייבת ל"+S.nameA : S.nameA+" חייב ל"+S.nameB;
+  return bal>0 ? S.nameB+" צריכה להעביר ל"+S.nameA : S.nameA+" צריך להעביר ל"+S.nameB;
 }
 function transferText(e){ return e.payer==="a" ? S.nameA+" העביר ל"+S.nameB : S.nameB+" העבירה ל"+S.nameA; }
 
@@ -194,7 +194,7 @@ function render(){
   const hero=$("hero"); hero.classList.remove("plus","minus");
   const ow = owesText(bal);
   if(!S.entries.length){ $("heroWho").textContent="עוד אין רישומים"; $("heroAmt").textContent=money(0); $("heroSub").textContent="כל הוצאה או הכנסה שתירשם תתחלק חצי חצי."; $("btnSettle").hidden=true; }
-  else if(!ow){ $("heroWho").textContent="אתם מאוזנים"; $("heroAmt").textContent=money(0); $("heroSub").textContent="אף אחד לא חייב כלום כרגע."; $("btnSettle").hidden=true; }
+  else if(!ow){ $("heroWho").textContent="אתם מאוזנים"; $("heroAmt").textContent=money(0); $("heroSub").textContent="אף אחד לא צריך להעביר כלום כרגע."; $("btnSettle").hidden=true; }
   else { hero.classList.add(bal>0?"plus":"minus"); $("heroWho").textContent=ow; $("heroAmt").textContent=money(bal); $("heroSub").textContent="יתרה מצטברת על כל הרישומים."; $("btnSettle").hidden=false; }
 
   // month
@@ -536,7 +536,7 @@ function buildMonthSheet(wb, ym, opt){
     const cn=owesText(-cum);
     noteRow(cn? cn+" "+money(cum)+" (כולל חודשים קודמים)" : "מאוזנים עד סוף החודש",{color:"FF66707F",height:20});
     ws.addRow([]);
-    const leg=ws.addRow(["ערך שלילי בסיכום = "+B+" חייבת ל"+A+"; ערך חיובי = "+A+" חייב ל"+B+"."]);
+    const leg=ws.addRow(["ערך שלילי בסיכום = "+B+" צריכה להעביר ל"+A+"; ערך חיובי = "+A+" צריך להעביר ל"+B+"."]);
     merge(leg.number,"A",LAST);
     leg.getCell(1).font={name:X.font,size:9,italic:true,color:{argb:"FF8A919C"}};
     leg.getCell(1).alignment={horizontal:"right"};
