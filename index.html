@@ -152,6 +152,23 @@ input[type=text],input[type=date],input[type=email],input[type=password],textare
 .irow.dup{opacity:.55}
 .irow .id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pb.sm{width:24px;height:24px;font-size:12px}
+.recbox{margin-top:16px;padding:12px 14px;border:1px dashed var(--line);border-radius:14px}
+.swl{display:flex;align-items:center;gap:10px;font-weight:600}
+.swl input{width:20px;height:20px;accent-color:var(--ink)}
+.recgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.recgrid.one{grid-template-columns:1fr}
+.recgrid label{display:flex;flex-direction:column;gap:6px;font-size:14px;color:var(--muted)}
+.recgrid select,.recgrid input,select.sel{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:11px 10px;width:100%}
+.recnote{margin-top:14px}
+.rec{color:var(--tr);font-weight:600}
+.rcard{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;width:100%;padding:12px 4px;border:0;border-bottom:1px solid var(--line);background:none;text-align:right}
+.rcard.paused{opacity:.5}
+.rcard .main{display:flex;flex-direction:column;min-width:0}
+.rcard .d{font-weight:600}
+.rcard .meta{font-size:13px;color:var(--muted)}
+.rcard .amt{font-size:18px;font-weight:700}
+.kind{font-weight:700;margin-left:6px}
+.kind.exp{color:var(--exp)} .kind.inc{color:var(--inc)}
 .toast{position:fixed;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:999px;font-size:15px;z-index:20;display:none}
 textarea{min-height:240px;font-size:15px;line-height:1.5}
 
@@ -245,6 +262,7 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     <button id="btnCopy">סיכום לשליחה</button>
     <button id="btnXlsx">ייצוא לאקסל</button>
     <button id="btnImport">ייבוא מאקסל</button>
+    <button id="btnRec">קבועות</button>
     <input type="file" id="impFile" accept=".xlsx,.xls,.csv" hidden>
   </div>
 </div>
@@ -276,6 +294,19 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     </div>
     <label class="f" for="fDate">תאריך</label>
     <input id="fDate" type="date">
+    <div id="recToggle" class="recbox">
+      <label class="swl"><input type="checkbox" id="fRec"> <span id="fRecLbl">הוצאה קבועה (חוזרת)</span></label>
+      <div id="recOpts" hidden>
+        <div class="recgrid">
+          <label>תדירות
+            <select id="fRecInt"><option value="1">כל חודש</option><option value="2">כל חודשיים</option><option value="3">כל 3 חודשים</option><option value="6">כל חצי שנה</option><option value="12">כל שנה</option></select>
+          </label>
+          <label>עד חודש (לא חובה)<input type="month" id="fRecEnd"></label>
+        </div>
+        <p class="hint">תירשם אוטומטית ב־<b id="fRecDay"></b> לחודש, באותו סכום ולאותו הורה. אפשר לשנות או לעצור בכל זמן.</p>
+      </div>
+    </div>
+    <p class="hint recnote" id="recNote" hidden>↻ רישום שנוצר מקבועה. שינוי כאן חל רק על הרישום הזה. <button class="link" id="fRecManage">עריכת הקבועה</button></p>
     <div class="preview" id="fPreview"></div>
     <div class="err" id="fErr"></div>
     <div class="actions">
@@ -367,6 +398,45 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
       <button class="primary" id="iGo">ייבוא</button>
       <button class="ghost" id="iCancel">ביטול</button>
     </div>
+  </div>
+</div>
+
+<!-- recurring list -->
+<div class="scrim" id="rScrim">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rTitle">
+    <h3 id="rTitle">הוצאות והכנסות קבועות</h3>
+    <div id="rList"></div>
+    <div class="actions"><button class="ghost" id="rClose" style="flex:1">סגירה</button></div>
+  </div>
+</div>
+
+<!-- recurring edit -->
+<div class="scrim" id="reScrim">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="reTitle">
+    <h3 id="reTitle">קבועה</h3>
+    <label class="f" for="reAmt">סכום</label>
+    <div class="amtbox"><span>₪</span><input id="reAmt" type="text" inputmode="decimal"></div>
+    <label class="f">מי</label>
+    <div class="seg" id="rePayer"><button data-v="a" id="rePA"></button><button data-v="b" id="rePB"></button></div>
+    <label class="f" for="reDesc">על מה</label>
+    <input id="reDesc" type="text">
+    <label class="f" for="reCat">קטגוריה</label>
+    <select id="reCat" class="sel"></select>
+    <div class="recgrid">
+      <label>יום בחודש<input id="reDay" type="number" min="1" max="31" inputmode="numeric"></label>
+      <label>תדירות
+        <select id="reInt"><option value="1">כל חודש</option><option value="2">כל חודשיים</option><option value="3">כל 3 חודשים</option><option value="6">כל חצי שנה</option><option value="12">כל שנה</option></select>
+      </label>
+    </div>
+    <div class="recgrid one"><label>עד חודש (לא חובה)<input type="month" id="reEnd"></label></div>
+    <p class="hint">שינויים חלים מהרישום הבא. רישומים שכבר נוצרו לא משתנים.</p>
+    <div class="err" id="reErr"></div>
+    <div class="actions">
+      <button class="primary" id="reSave">שמירה</button>
+      <button class="ghost" id="rePause">השהיה</button>
+      <button class="ghost danger" id="reDel">מחיקה</button>
+    </div>
+    <button class="link" id="reBack" style="margin-top:12px">חזרה לרשימה</button>
   </div>
 </div>
 

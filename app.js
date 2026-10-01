@@ -10,7 +10,7 @@ const signed = n => (n<0?"−":"+") + money(n);
 const pad = n => String(n).padStart(2,"0");
 const today = () => { const d=new Date(); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); };
 
-const S = { user:null, entries:[], cats:DEFAULT_CATS.slice(), nameA:"אילן", nameB:"קרן", month:today().slice(0,7), who:"all", kind:"all", online:navigator.onLine };
+const S = { user:null, entries:[], rec:[], recOk:false, cats:DEFAULT_CATS.slice(), nameA:"אילן", nameB:"קרן", month:today().slice(0,7), who:"all", kind:"all", online:navigator.onLine };
 
 /* ---------- Supabase ---------- */
 const cfg = window.HETZI_CONFIG || {};
@@ -100,6 +100,15 @@ async function loadAll(){
     await saveSettings();
   }
   saveCache(); render();
+  if(!S.recBusy){
+    S.recBusy=true;
+    try{ await loadRecurring(); const n=await runRecurring();
+      if(n){ toast(n===1?"נוסף רישום קבוע":"נוספו "+n+" רישומים קבועים");
+        const r=await sb.from(T_ENT).select("*"); if(!r.error){ S.entries=r.data; saveCache(); } }
+      render();
+    }catch(e){}
+    S.recBusy=false;
+  }
 }
 async function saveSettings(){
   const {error} = await sb.from(T_SET).upsert({user_id:S.user.id, categories:S.cats, name_a:S.nameA, name_b:S.nameB, updated_at:new Date().toISOString()});
@@ -251,6 +260,7 @@ function render(){
       const pb=r.querySelector(".pb"); pb.classList.add(e.payer); pb.textContent=nm(e.payer).slice(0,1); pb.title=nm(e.payer);
       r.querySelector(".d").textContent = type==="transfer" ? transferText(e) : (e.description||title);
       const meta=r.querySelector(".meta");
+      if(e.recurring_id){ const rc=document.createElement("span"); rc.className="rec"; rc.textContent="↻ קבוע"; meta.appendChild(rc); }
       if(e.category){ const t=document.createElement("span"); t.className="tag"; t.style.setProperty("--h",catColor(e.category)); t.textContent=e.category; meta.appendChild(t); }
       const dt=document.createElement("span"); dt.className="dt"; dt.textContent=fmtDay(e.date)+"  "+(type==="expense"?"שילם/ה ":type==="income"?"קיבל/ה ":"")+(type==="transfer"?"":nm(e.payer)); meta.appendChild(dt);
       r.querySelector(".amt").textContent=money(e.amount);
@@ -259,6 +269,123 @@ function render(){
     }
     box.appendChild(sec);
   }
+}
+
+/* ---------- recurring (קבועות) ---------- */
+const T_REC = "hetzi_recurring";
+const INT_LABEL = {1:"כל חודש",2:"כל חודשיים",3:"כל 3 חודשים",6:"כל חצי שנה",12:"כל שנה"};
+const addMonths=(ym,n)=>{ let [y,m]=ym.split("-").map(Number); m+=n; while(m>12){m-=12;y++;} return y+"-"+pad(m); };
+const daysIn=ym=>{ const [y,m]=ym.split("-").map(Number); return new Date(y,m,0).getDate(); };
+const recDate=(t,ym)=>ym+"-"+pad(Math.min(t.day,daysIn(ym)));
+function nextOccurrence(t){
+  let ym = t.last_generated ? addMonths(t.last_generated,t.interval_months) : t.start_month;
+  if(t.end_month && ym>t.end_month) return null;
+  return recDate(t,ym);
+}
+async function loadRecurring(){
+  const {data,error}=await sb.from(T_REC).select("*").order("created_at");
+  S.recOk=!error; S.rec=error?[]:data;
+}
+async function runRecurring(){
+  if(!S.recOk) return 0;
+  const td=today(), cur=td.slice(0,7); let added=0;
+  for(const t of S.rec){
+    if(!t.active) continue;
+    const rows=[]; let ym=t.last_generated?addMonths(t.last_generated,t.interval_months):t.start_month, last=t.last_generated;
+    while(ym<=cur && (!t.end_month||ym<=t.end_month)){
+      const d=recDate(t,ym); if(d>td) break;
+      rows.push({user_id:S.user.id,type:t.type,payer:t.payer,amount:t.amount,description:t.description,category:t.category,date:d,recurring_id:t.id});
+      last=ym; ym=addMonths(ym,t.interval_months);
+    }
+    if(!rows.length) continue;
+    // claim the months first, so two devices never create the same entries
+    let q=sb.from(T_REC).update({last_generated:last}).eq("id",t.id);
+    q = t.last_generated ? q.eq("last_generated",t.last_generated) : q.is("last_generated",null);
+    const {data:claimed,error}=await q.select();
+    if(error||!claimed||!claimed.length) continue;
+    t.last_generated=last;
+    const ins=await sb.from(T_ENT).insert(rows);
+    if(!ins.error) added+=rows.length;
+  }
+  return added;
+}
+function recLabel(t){ return INT_LABEL[t.interval_months]||("כל "+t.interval_months+" חודשים"); }
+
+// management sheet
+function openRecList(){
+  const box=$("rList"); box.innerHTML="";
+  if(!S.recOk){ box.innerHTML='<p class="hint">כדי להשתמש בקבועות צריך להריץ פעם אחת את עדכון ה-SQL (הקובץ update-recurring.sql).</p>'; }
+  else if(!S.rec.length){ box.innerHTML='<p class="hint">אין עדיין הוצאות או הכנסות קבועות. כדי להוסיף, סמן "קבועה" כשאתה רושם הוצאה או הכנסה.</p>'; }
+  for(const t of S.rec){
+    const c=document.createElement("button"); c.className="rcard"+(t.active?"":" paused");
+    const nx=t.active?nextOccurrence(t):null;
+    c.innerHTML='<span class="pb"></span><span class="main"><span class="d"></span><span class="meta"></span></span><span class="amt num ltr"></span>';
+    const pb=c.querySelector(".pb"); pb.classList.add(t.payer); pb.textContent=nm(t.payer).slice(0,1);
+    c.querySelector(".d").textContent=t.description||(t.type==="expense"?"הוצאה":"הכנסה");
+    const meta=c.querySelector(".meta");
+    const k=document.createElement("span"); k.className="kind "+(t.type==="expense"?"exp":"inc"); k.textContent=t.type==="expense"?"הוצאה":"הכנסה"; meta.appendChild(k);
+    meta.append(recLabel(t)+" ב־"+t.day+" לחודש"+(t.end_month?", עד "+t.end_month.slice(5)+"/"+t.end_month.slice(0,4):"")
+      +(t.active? (nx?", הבא: "+fmtDay(nx):", הסתיימה") : ", מושהית"));
+    c.querySelector(".amt").textContent=money(t.amount);
+    c.onclick=()=>openRecEdit(t);
+    box.appendChild(c);
+  }
+  closeSheets(); $("rScrim").classList.add("open");
+}
+let RT=null;
+function openRecEdit(t){
+  RT=Object.assign({},t);
+  $("reTitle").textContent=(t.type==="expense"?"הוצאה":"הכנסה")+" קבועה";
+  $("reAmt").value=t.amount; $("reDesc").value=t.description||""; $("reDay").value=t.day;
+  $("reInt").value=String(t.interval_months); $("reEnd").value=t.end_month||"";
+  const cs=$("reCat"); cs.innerHTML='<option value="">ללא</option>';
+  const list=S.cats.slice(); if(t.category&&!list.includes(t.category)) list.push(t.category);
+  list.forEach(c=>{ const o=document.createElement("option"); o.value=c; o.textContent=c; if(c===t.category) o.selected=true; cs.appendChild(o); });
+  $("rePA").textContent=S.nameA; $("rePB").textContent=S.nameB; setSeg("rePayer",RT.payer);
+  $("rePause").textContent=t.active?"השהיה":"חידוש";
+  $("reErr").textContent="";
+  closeSheets(); $("reScrim").classList.add("open");
+}
+$("rePayer").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; RT.payer=b.dataset.v; setSeg("rePayer",RT.payer); });
+$("reSave").onclick=async()=>{
+  const amount=parseAmt($("reAmt").value), day=parseInt($("reDay").value,10);
+  if(!(amount>0)){ $("reErr").textContent="יש להזין סכום גדול מאפס."; return; }
+  if(!(day>=1&&day<=31)){ $("reErr").textContent="יום בחודש צריך להיות בין 1 ל־31."; return; }
+  const end=$("reEnd").value||null;
+  const upd={amount:Math.round(amount*100)/100,payer:RT.payer,description:$("reDesc").value.trim(),category:$("reCat").value,day,interval_months:+$("reInt").value,end_month:end};
+  const {error}=await sb.from(T_REC).update(upd).eq("id",RT.id);
+  if(error){ $("reErr").textContent="השמירה נכשלה. נסה שוב."; return; }
+  Object.assign(S.rec.find(x=>x.id===RT.id),upd);
+  toast("נשמר. השינוי חל מהרישום הבא"); openRecList();
+};
+$("rePause").onclick=async()=>{
+  const t=S.rec.find(x=>x.id===RT.id); const active=!t.active; const upd={active};
+  // resuming: skip the months that passed while paused
+  if(active){ const cur=today().slice(0,7); let ym=nextOccurrence(t); if(ym){ ym=ym.slice(0,7); let last=t.last_generated; while(ym<cur){ last=ym; ym=addMonths(ym,t.interval_months); } upd.last_generated=last; } }
+  const {error}=await sb.from(T_REC).update(upd).eq("id",t.id);
+  if(error){ $("reErr").textContent="הפעולה נכשלה. נסה שוב."; return; }
+  Object.assign(t,upd); toast(active?"חודשה":"הושהתה");
+  if(active){ const n=await runRecurring(); if(n) await loadAll(); }
+  openRecList();
+};
+$("reDel").onclick=async()=>{
+  if(!confirm("למחוק את הקבועה? רישומים שכבר נוצרו יישארו, ולא ייווצרו חדשים.")) return;
+  const {error}=await sb.from(T_REC).delete().eq("id",RT.id);
+  if(error){ $("reErr").textContent="המחיקה נכשלה. נסה שוב."; return; }
+  S.rec=S.rec.filter(x=>x.id!==RT.id); toast("הקבועה נמחקה"); openRecList(); render();
+};
+$("reBack").onclick=openRecList;
+$("rClose").onclick=closeSheets;
+$("btnRec").onclick=openRecList;
+
+// create a template from an entry being saved
+async function createRecurring(entry,interval,end){
+  const ym=entry.date.slice(0,7);
+  const t={user_id:S.user.id,type:entry.type,payer:entry.payer,amount:entry.amount,description:entry.description,category:entry.category,
+    day:+entry.date.slice(8,10),interval_months:interval,start_month:ym,end_month:end||null,last_generated:ym,active:true};
+  const {data,error}=await sb.from(T_REC).insert(t).select().single();
+  if(error) throw error;
+  S.rec.push(data); return data;
 }
 
 /* ---------- entry sheet ---------- */
@@ -283,6 +410,11 @@ function updateForm(){
   $("whoA").textContent = F.type==="transfer"? S.nameA+" העביר" : S.nameA;
   $("whoB").textContent = F.type==="transfer"? S.nameB+" העבירה" : S.nameB;
   $("descBlock").hidden = F.type==="transfer";
+  const canRec = F.type!=="transfer" && S.recOk && !F.recId;
+  $("recToggle").hidden=!canRec; $("recOpts").hidden=!(canRec && $("fRec").checked);
+  $("recNote").hidden=!(F.recId && F.type!=="transfer");
+  $("fRecLbl").textContent = (F.type==="income"?"הכנסה קבועה":"הוצאה קבועה")+" (חוזרת)";
+  const dd=$("fDate").value; $("fRecDay").textContent = dd ? +dd.slice(8,10) : "";
   const a=parseAmt($("fAmt").value);
   const p=$("fPreview"); p.innerHTML="";
   if(a>0){ const ef=effect({type:F.type,payer:F.payer,amount:a});
@@ -306,6 +438,8 @@ function openEntry(e, preset){
   $("fDesc").value = e? (e.description||"") : "";
   $("fDate").value = e? e.date : (S.month===today().slice(0,7)? today() : S.month+"-01");
   $("fDel").hidden=!e; $("fErr").textContent="";
+  F.recId = e && e.recurring_id && S.rec.some(t=>t.id===e.recurring_id) ? e.recurring_id : null;
+  $("fRec").checked=false; $("fRecInt").value="1"; $("fRecEnd").value="";
   renderCats(); updateForm();
   $("entryScrim").classList.add("open");
   if(!e) setTimeout(()=>$("fAmt").focus(),60);
@@ -320,6 +454,9 @@ $("typeSeg").addEventListener("click",ev=>{ const b=ev.target.closest("button");
   renderCats(); updateForm(); });
 $("whoSeg").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; F.payer=b.dataset.v; updateForm(); });
 $("fAmt").addEventListener("input",updateForm);
+$("fDate").addEventListener("change",updateForm);
+$("fRec").addEventListener("change",updateForm);
+$("fRecManage").onclick=()=>{ const t=S.rec.find(x=>x.id===F.recId); if(t) openRecEdit(t); };
 $("fCancel").onclick=closeSheets;
 $("fSave").onclick=async()=>{
   const amount=parseAmt($("fAmt").value), date=$("fDate").value;
@@ -328,7 +465,11 @@ $("fSave").onclick=async()=>{
   const data={type:F.type,payer:F.payer,amount:Math.round(amount*100)/100,date,
     description:F.type==="transfer"?"":$("fDesc").value.trim(),category:F.type==="transfer"?"":F.cat};
   $("fSave").disabled=true;
-  try{ await saveEntry(F.id,data); S.month=date.slice(0,7); closeSheets(); toast(F.id?"הרישום עודכן":"הרישום נשמר"); render(); }
+  const makeRec = !$("recToggle").hidden && $("fRec").checked;
+  try{
+    if(makeRec){ const t=await createRecurring(data,+$("fRecInt").value,$("fRecEnd").value); data.recurring_id=t.id; }
+    await saveEntry(F.id,data); S.month=date.slice(0,7); closeSheets();
+    toast(makeRec?"נשמר כקבוע":(F.id?"הרישום עודכן":"הרישום נשמר")); render(); }
   catch(e){ $("fErr").textContent = navigator.onLine ? "השמירה נכשלה. נסה שוב." : "אין חיבור לאינטרנט. השמירה תתאפשר כשהחיבור יחזור."; }
   $("fSave").disabled=false;
 };
