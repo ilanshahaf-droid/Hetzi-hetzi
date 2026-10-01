@@ -1,4 +1,4 @@
-const CACHE = "hetzi-v1";
+const CACHE = "hetzi-v2";
 const SHELL = ["./", "index.html", "app.js", "config.js", "manifest.json", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -13,7 +13,7 @@ self.addEventListener("fetch", e => {
   const url = new URL(req.url);
   if (url.hostname.endsWith("supabase.co")) return;           // נתונים – תמיד מהרשת
   if (url.origin === location.origin) {                          // קבצי האפליקציה – רשת קודם, מטמון כגיבוי
-    e.respondWith(fetch(req).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res; })
+    e.respondWith(fetch(req, { cache: "no-cache" }).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res; })
       .catch(() => caches.match(req).then(r => r || caches.match("index.html"))));
     return;
   }
