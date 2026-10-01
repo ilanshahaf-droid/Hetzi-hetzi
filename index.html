@@ -17,13 +17,20 @@
 :root{
   --paper:#F5F7F4; --surface:#FFFFFF; --ink:#1E2940; --muted:#66707F; --line:#DCE1DA;
   --plus:#3F7A5A; --minus:#A94F38; --accent:#1E2940; --chip:#E8ECE6;
+  --plus-bg:#E3F0E8; --minus-bg:#F7E6E1;
+  --a:#2F6DB5; --a-bg:#E6EEF8; --b:#A8458A; --b-bg:#F6E7F1;
+  --exp:#C0652A; --exp-bg:#FBEFE5; --inc:#2A8577; --inc-bg:#E2F2EF; --tr:#5B5FA0; --tr-bg:#ECEDF7;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
   color-scheme:light dark;
 }
 @media (prefers-color-scheme:dark){
   :root{ --paper:#141A24; --surface:#1C2330; --ink:#E7EBF0; --muted:#98A1AE; --line:#2E3746;
-    --plus:#7BC29B; --minus:#E58E77; --accent:#E7EBF0; --chip:#262F3E; }
+    --plus:#7BC29B; --minus:#E58E77; --accent:#E7EBF0; --chip:#262F3E;
+    --plus-bg:#1F3328; --minus-bg:#3A2420;
+    --a:#6FA4E3; --a-bg:#1D2A3D; --b:#D987BE; --b-bg:#35212F;
+    --exp:#E8A06A; --exp-bg:#352619; --inc:#6CC7B6; --inc-bg:#173430; --tr:#A2A6E0; --tr-bg:#25273D; }
+  .tag{background:hsl(var(--h) 35% 24%)!important;color:hsl(var(--h) 60% 80%)!important}
 }
 *,*::before,*::after{box-sizing:inherit}
 [hidden]{display:none!important}
@@ -46,30 +53,52 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .settle{background:none;border:1.5px solid var(--ink);border-radius:999px;padding:8px 18px;font-weight:600;font-size:15px}
 .offline{font-size:14px;color:var(--minus);margin-top:12px}
 
-.monthbar{display:flex;align-items:center;justify-content:space-between;margin:26px 0 10px}
-.monthbar h2{margin:0;font-size:22px;font-weight:700}
-.monthbar .arrows{display:flex;gap:4px}
-.monthbar .arrows button{background:var(--chip);border:0;width:38px;height:38px;border-radius:50%;font-size:18px}
-table.sum{width:100%;border-collapse:collapse;margin:8px 0 4px}
-table.sum th,table.sum td{padding:9px 4px;border-bottom:1px solid var(--line);text-align:right}
-table.sum th{font-size:14px;color:var(--muted);font-weight:600}
-table.sum td.v{text-align:left;font-size:19px;font-weight:700}
-table.sum th.c{text-align:left}
-.monthres{font-size:16px;margin:10px 0 0;font-weight:600}
-.monthres .plus{color:var(--plus)} .monthres .minus{color:var(--minus)}
-.tools{display:flex;gap:18px;margin:12px 0 4px;flex-wrap:wrap}
-.tools button,.link{background:none;border:0;padding:4px 0;color:var(--muted);font-size:15px;text-decoration:underline;text-underline-offset:3px}
+.monthbar{display:flex;align-items:center;justify-content:space-between;margin:26px 0 14px}
+.monthbar h2{margin:0;font-size:24px;font-weight:700}
+.monthbar button{background:var(--chip);border:0;width:42px;height:42px;border-radius:50%;font-size:22px;line-height:1}
 
-.day{font-size:14px;color:var(--muted);margin:20px 0 2px;font-weight:600}
-.row{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:12px 0;border:0;border-bottom:1px solid var(--line);width:100%;background:none;text-align:right}
-.row .d{font-weight:600}
-.row .m{font-size:14px;color:var(--muted)}
-.row .a{font-size:18px;font-weight:700;justify-self:end}
-.row .e{font-size:14px;justify-self:end}
-.row .e.plus{color:var(--plus)} .row .e.minus{color:var(--minus)}
-.row.transfer .d{font-weight:400;font-style:italic}
+.people{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pcard{display:flex;flex-direction:column;gap:4px;text-align:right;border:0;border-radius:16px;padding:12px 14px;background:var(--pbg);border-top:4px solid var(--pc);transition:opacity .15s}
+.pcard.a{--pc:var(--a);--pbg:var(--a-bg)} .pcard.b{--pc:var(--b);--pbg:var(--b-bg)}
+.pcard.dim{opacity:.4}
+.pcard .pn{font-weight:700;font-size:18px;color:var(--pc)}
+.pcard .pl{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:var(--muted)}
+.pcard .pl b{font-size:18px;color:var(--ink)}
+.result{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;padding:12px 14px;border-radius:14px;background:var(--chip);font-weight:600}
+.result .rl{color:var(--muted);font-size:14px;font-weight:600;white-space:nowrap}
+.result .rt{text-align:left}
+.result.plus{background:var(--plus-bg)} .result.plus b{color:var(--plus)}
+.result.minus{background:var(--minus-bg)} .result.minus b{color:var(--minus)}
+.result b{font-size:20px}
+
+.filterbar{display:flex;align-items:center;gap:10px;margin:22px 0 4px}
+.filterbar>span{color:var(--muted);font-size:14px}
+.filterbar .seg{flex:1;margin:0}
+.seg.filter button[data-v=a][aria-pressed=true]{background:var(--a);color:#fff}
+.seg.filter button[data-v=b][aria-pressed=true]{background:var(--b);color:#fff}
+
+.sec{margin-top:18px;border-radius:18px;background:var(--surface);overflow:hidden;border:1px solid var(--line)}
+.sec header{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--sbg);border-bottom:1px solid var(--line)}
+.sec.exp{--sc:var(--exp);--sbg:var(--exp-bg)} .sec.inc{--sc:var(--inc);--sbg:var(--inc-bg)} .sec.tr{--sc:var(--tr);--sbg:var(--tr-bg)}
+.sec h3{margin:0;font-size:18px;color:var(--sc)}
+.sec .stot{display:flex;align-items:baseline;gap:10px}
+.sec .stot small{color:var(--muted);font-size:13px}
+.sec .stot b{font-size:19px;color:var(--sc)}
+.sec .none{margin:0;padding:16px 14px;color:var(--muted);font-size:15px}
+.item{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;width:100%;padding:11px 14px;background:none;border:0;border-bottom:1px solid var(--line);text-align:right}
+.item:last-child{border-bottom:0}
+.item:active{background:var(--chip)}
+.pb{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:15px;color:#fff}
+.pb.a{background:var(--a)} .pb.b{background:var(--b)}
+.item .main{display:flex;flex-direction:column;min-width:0}
+.item .d{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .meta{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.tag{background:hsl(var(--h) 60% 92%);color:hsl(var(--h) 45% 32%);padding:1px 9px;border-radius:999px;font-weight:600;font-size:12.5px}
+.item .amt{font-size:18px;font-weight:700}
 .empty{padding:34px 0;color:var(--muted);text-align:center}
 .empty .settle{margin-top:14px;color:var(--ink)}
+.tools{display:flex;gap:18px;margin:22px 0 4px;flex-wrap:wrap;justify-content:center}
+.tools button,.link{background:none;border:0;padding:4px 0;color:var(--muted);font-size:15px;text-decoration:underline;text-underline-offset:3px}
 
 .fab{position:fixed;bottom:0;left:0;right:0;padding:0 18px calc(18px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center;pointer-events:none}
 .fab button{pointer-events:auto;background:var(--accent);color:var(--paper);border:0;border-radius:999px;padding:15px 34px;font-size:18px;font-weight:700;box-shadow:0 6px 20px rgba(20,30,50,.25)}
@@ -106,6 +135,7 @@ input[type=text],input[type=date],input[type=email],input[type=password],textare
 .catrow button{background:none;border:1px solid var(--line);border-radius:12px;width:44px;color:var(--minus);font-size:18px}
 .namegrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .acct{font-size:14px;color:var(--muted);margin-top:22px;padding-top:14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.tools button:disabled{opacity:.5}
 .toast{position:fixed;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:999px;font-size:15px;z-index:20;display:none}
 textarea{min-height:240px;font-size:15px;line-height:1.5}
 
@@ -157,26 +187,40 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
   </section>
 
   <div class="monthbar">
+    <button id="nextM" aria-label="חודש הבא">›</button>
     <h2 id="monthTitle"></h2>
-    <div class="arrows">
-      <button id="prevM" aria-label="חודש קודם">›</button>
-      <button id="nextM" aria-label="חודש הבא">‹</button>
-    </div>
-  </div>
-  <table class="sum">
-    <thead><tr><th></th><th class="c" id="thA"></th><th class="c" id="thB"></th></tr></thead>
-    <tbody>
-      <tr><th>הוצאות</th><td class="v num"><span class="ltr" id="expA"></span></td><td class="v num"><span class="ltr" id="expB"></span></td></tr>
-      <tr><th>הכנסות</th><td class="v num"><span class="ltr" id="incA"></span></td><td class="v num"><span class="ltr" id="incB"></span></td></tr>
-    </tbody>
-  </table>
-  <p class="monthres" id="monthRes"></p>
-  <div class="tools">
-    <button id="btnCopy">סיכום לשליחה</button>
-    <button id="btnCsv">ייצוא לאקסל</button>
+    <button id="prevM" aria-label="חודש קודם">‹</button>
   </div>
 
-  <div id="list"></div>
+  <div class="people">
+    <button class="pcard a" id="pca">
+      <span class="pn" data-name="a"></span>
+      <span class="pl"><span>הוצאות</span><b class="ltr num" id="pExpa"></b></span>
+      <span class="pl"><span>הכנסות</span><b class="ltr num" id="pInca"></b></span>
+    </button>
+    <button class="pcard b" id="pcb">
+      <span class="pn" data-name="b"></span>
+      <span class="pl"><span>הוצאות</span><b class="ltr num" id="pExpb"></b></span>
+      <span class="pl"><span>הכנסות</span><b class="ltr num" id="pIncb"></b></span>
+    </button>
+  </div>
+  <div class="result" id="monthRes"></div>
+
+  <div class="filterbar">
+    <span>הצג:</span>
+    <div class="seg filter" id="whoFilter">
+      <button data-v="all">הכול</button>
+      <button data-v="a" data-name="a"></button>
+      <button data-v="b" data-name="b"></button>
+    </div>
+  </div>
+
+  <div id="lists"></div>
+
+  <div class="tools">
+    <button id="btnCopy">סיכום לשליחה</button>
+    <button id="btnXlsx">ייצוא לאקסל</button>
+  </div>
 </div>
 <div class="fab"><button id="btnAdd">+ רישום חדש</button></div>
 </div>
