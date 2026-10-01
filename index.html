@@ -55,7 +55,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 
 .monthbar{display:flex;align-items:center;justify-content:space-between;margin:26px 0 14px}
 .monthbar h2{margin:0;font-size:24px;font-weight:700}
-.monthbar button{background:var(--chip);border:0;width:42px;height:42px;border-radius:50%;font-size:22px;line-height:1}
+.monthbar button{background:var(--chip);border:0;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;color:var(--ink)}
 
 .people{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .pcard{display:flex;flex-direction:column;gap:4px;text-align:right;border:0;border-radius:16px;padding:12px 14px;background:var(--pbg);border-top:4px solid var(--pc);transition:opacity .15s}
@@ -72,7 +72,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .result b{font-size:20px}
 
 .filterbar{display:flex;align-items:center;gap:10px;margin:22px 0 4px}
-.filterbar>span{color:var(--muted);font-size:14px}
+.filterbar>span{color:var(--muted);font-size:14px;width:28px}
+.filterbar.second{margin-top:8px}
+.seg.filter button[data-v=expense][aria-pressed=true]{background:var(--exp);color:#fff}
+.seg.filter button[data-v=income][aria-pressed=true]{background:var(--inc);color:#fff}
 .filterbar .seg{flex:1;margin:0}
 .seg.filter button[data-v=a][aria-pressed=true]{background:var(--a);color:#fff}
 .seg.filter button[data-v=b][aria-pressed=true]{background:var(--b);color:#fff}
@@ -187,9 +190,9 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
   </section>
 
   <div class="monthbar">
-    <button id="nextM" aria-label="חודש הבא">›</button>
+    <button id="nextM" aria-label="חודש הבא"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <h2 id="monthTitle"></h2>
-    <button id="prevM" aria-label="חודש קודם">‹</button>
+    <button id="prevM" aria-label="חודש קודם"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
 
   <div class="people">
@@ -207,11 +210,19 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
   <div class="result" id="monthRes"></div>
 
   <div class="filterbar">
-    <span>הצג:</span>
+    <span>מי:</span>
     <div class="seg filter" id="whoFilter">
-      <button data-v="all">הכול</button>
+      <button data-v="all">שניהם</button>
       <button data-v="a" data-name="a"></button>
       <button data-v="b" data-name="b"></button>
+    </div>
+  </div>
+  <div class="filterbar second">
+    <span>מה:</span>
+    <div class="seg filter" id="kindFilter">
+      <button data-v="all">הכול</button>
+      <button data-v="expense">הוצאות</button>
+      <button data-v="income">הכנסות</button>
     </div>
   </div>
 

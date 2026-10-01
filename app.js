@@ -10,7 +10,7 @@ const signed = n => (n<0?"−":"+") + money(n);
 const pad = n => String(n).padStart(2,"0");
 const today = () => { const d=new Date(); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); };
 
-const S = { user:null, entries:[], cats:DEFAULT_CATS.slice(), nameA:"אילן", nameB:"קרן", month:today().slice(0,7), who:"all", online:navigator.onLine };
+const S = { user:null, entries:[], cats:DEFAULT_CATS.slice(), nameA:"אילן", nameB:"קרן", month:today().slice(0,7), who:"all", kind:"all", online:navigator.onLine };
 
 /* ---------- Supabase ---------- */
 const cfg = window.HETZI_CONFIG || {};
@@ -206,7 +206,7 @@ function render(){
     $("pInc"+p).textContent=money(sumBy(items,"income",p));
     $("pc"+p).classList.toggle("dim", S.who!=="all" && S.who!==p);
   }
-  setSeg("whoFilter",S.who);
+  setSeg("whoFilter",S.who); setSeg("kindFilter",S.kind);
   const mBal = items.filter(e=>e.type!=="transfer").reduce((s,e)=>s+effect(e),0);
   const res=$("monthRes"); res.innerHTML=""; res.className="result";
   if(items.some(e=>e.type!=="transfer")){
@@ -234,6 +234,7 @@ function render(){
     .sort((a,b)=>(b.date||"").localeCompare(a.date||"")||String(a.created_at).localeCompare(String(b.created_at)));
   const SECS=[["expense","הוצאות","exp"],["income","הכנסות והחזרים","inc"],["transfer","העברות ביניכם","tr"]];
   for(const [type,title,cls] of SECS){
+    if(S.kind!=="all" && S.kind!==type) continue;
     const rows=shown.filter(e=>e.type===type);
     if(!rows.length && type==="transfer") continue;
     const sec=document.createElement("section"); sec.className="sec "+cls;
@@ -387,6 +388,7 @@ $("btnSettle").onclick=()=>{
 $("prevM").onclick=()=>shiftMonth(-1); $("nextM").onclick=()=>shiftMonth(1);
 function shiftMonth(d){ let [y,m]=S.month.split("-").map(Number); m+=d; if(m<1){m=12;y--;} if(m>12){m=1;y++;} S.month=y+"-"+pad(m); render(); }
 $("whoFilter").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; S.who=b.dataset.v; render(); });
+$("kindFilter").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; S.kind=b.dataset.v; render(); });
 ["a","b"].forEach(p=>$("pc"+p).addEventListener("click",()=>{ S.who = S.who===p?"all":p; render(); }));
 
 function monthItems(){ return monthEntries().sort((a,b)=>a.date.localeCompare(b.date)||String(a.created_at).localeCompare(String(b.created_at))); }
@@ -439,15 +441,29 @@ function styleRow(row,{bg,color="FF1E2940",bold=false,size=11,height}={}){
     c.font={name:X.font,size,bold,color:{argb:color}};
     if(bg) c.fill=fill(bg);
     c.border=border();
-    c.alignment=Object.assign({vertical:"middle",horizontal: col<=3?"right":"center"}, c.alignment||{});
+    c.alignment=Object.assign({vertical:"middle",horizontal: (col===2||col===3)?"right":"center"}, c.alignment||{});
   });
   if(height) row.height=height;
+}
+function cellLen(c){
+  const v=c.value;
+  if(v==null||v==="") return 0;
+  if(v instanceof Date) return 10;
+  if(typeof v==="number") return money(v).length+3;
+  if(typeof v==="object" && "formula" in v) return money(v.result||0).length+4;
+  return String(v).length;
+}
+function autoWidth(ws,ncol,min=7){
+  for(let i=1;i<=ncol;i++){
+    let w=0;
+    ws.getColumn(i).eachCell({includeEmpty:false},c=>{ if(c.isMerged) return; w=Math.max(w,cellLen(c)*(c.font&&c.font.bold?1.15:1.05)); });
+    ws.getColumn(i).width=Math.min(48,Math.max(min,Math.ceil(w+2)));
+  }
 }
 function buildMonthSheet(wb, ym){
   const [y,m]=ym.split("-").map(Number);
   const ws=wb.addWorksheet(MONTHS[m-1]+" "+y,{views:[{rightToLeft:true,showGridLines:false}],
     pageSetup:{orientation:"portrait",fitToPage:true,fitToWidth:1,fitToHeight:0,paperSize:9}});
-  ws.columns=[{width:38},{width:15},{width:13},{width:15},{width:15}];
   const items=S.entries.filter(e=>e.date.slice(0,7)===ym).sort((a,b)=>a.date.localeCompare(b.date)||String(a.created_at).localeCompare(String(b.created_at)));
   const B=S.nameB, A=S.nameA;
 
@@ -460,21 +476,21 @@ function buildMonthSheet(wb, ym){
   // section builder; returns {totRow}
   const section=(type,title,head,headL,totLabel)=>{
     const rows=items.filter(e=>e.type===type);
-    const hr=ws.addRow([title,"קטגוריה","תאריך",B,A]);
+    const hr=ws.addRow(["תאריך",title,"קטגוריה",B,A]);
     styleRow(hr,{bg:head,color:"FFFFFFFF",bold:true,size:12,height:24});
     const first=hr.number+1;
     rows.forEach((e,i)=>{
-      const r=ws.addRow([type==="transfer"?transferText(e):(e.description||""), e.category||"", toDate(e.date), e.payer==="b"?+e.amount:null, e.payer==="a"?+e.amount:null]);
+      const r=ws.addRow([toDate(e.date), type==="transfer"?transferText(e):(e.description||""), e.category||"", e.payer==="b"?+e.amount:null, e.payer==="a"?+e.amount:null]);
       styleRow(r,{bg:i%2?X.zebra:"FFFFFFFF",height:20});
     });
-    if(!rows.length){ const r=ws.addRow(["אין רישומים"]); styleRow(r,{color:"FF8A919C",height:20}); }
+    if(!rows.length){ const r=ws.addRow(["","אין רישומים"]); styleRow(r,{color:"FF8A919C",height:20}); }
     const last=ws.lastRow.number;
-    const tr=ws.addRow([totLabel,"","",
+    const tr=ws.addRow(["",totLabel,"",
       {formula:`SUM(D${first}:D${last})`, result:sumBy(rows,type,"b")},
       {formula:`SUM(E${first}:E${last})`, result:sumBy(rows,type,"a")}]);
     styleRow(tr,{bg:headL,bold:true,height:22});
     for(let r=first;r<=tr.number;r++){
-      ws.getCell("C"+r).numFmt=X.date;
+      ws.getCell("A"+r).numFmt=X.date;
       ws.getCell("D"+r).numFmt=X.money; ws.getCell("E"+r).numFmt=X.money;
       ws.getCell("D"+r).font=Object.assign({},ws.getCell("D"+r).font,{color:{argb:X.b}});
       ws.getCell("E"+r).font=Object.assign({},ws.getCell("E"+r).font,{color:{argb:X.a}});
@@ -485,6 +501,7 @@ function buildMonthSheet(wb, ym){
     const r=ws.addRow([label,"","",{formula,result},""]);
     ws.mergeCells(`A${r.number}:C${r.number}`);
     styleRow(r,{bg,bold:true,height:22});
+    ws.getCell("A"+r.number).alignment={horizontal:"right",vertical:"middle"};
     ws.getCell("D"+r.number).numFmt=X.money;
     return r.number;
   };
@@ -508,26 +525,32 @@ function buildMonthSheet(wb, ym){
   const fr=ws.addRow(["סיכום סופי","","",{formula:parts.join("+"),result},""]);
   ws.mergeCells(`A${fr.number}:C${fr.number}`);
   styleRow(fr,{bg:X.navy,color:"FFFFFFFF",bold:true,size:13,height:28});
+  ws.getCell("A"+fr.number).alignment={horizontal:"right",vertical:"middle"};
   ws.getCell("D"+fr.number).numFmt=X.money;
   const ow=owesText(-result);
   const note=ws.addRow([ ow ? ow+" "+money(result)+(items.some(e=>e.type==="transfer")?" (אחרי העברות)":"") : "החודש מאוזן" ]);
   ws.mergeCells(`A${note.number}:E${note.number}`);
   styleRow(note,{bold:true,size:12,height:24,color: result<0?"FF3F7A5A":"FFA94F38"});
+  ws.getCell("A"+note.number).alignment={horizontal:"right",vertical:"middle"};
 
   const cum=Math.round(-100*S.entries.filter(e=>e.date.slice(0,7)<=ym).reduce((s,e)=>s+effect(e),0))/100;
   const cr=ws.addRow(["יתרה מצטברת עד סוף החודש","","",cum,""]);
   ws.mergeCells(`A${cr.number}:C${cr.number}`);
   styleRow(cr,{bg:"FFEFF1EC",bold:true,height:22});
+  ws.getCell("A"+cr.number).alignment={horizontal:"right",vertical:"middle"};
   ws.getCell("D"+cr.number).numFmt=X.money;
   const cn=owesText(-cum);
   const cnr=ws.addRow([cn? cn+" "+money(cum)+" (כולל חודשים קודמים)" : "מאוזנים עד סוף החודש"]);
   ws.mergeCells(`A${cnr.number}:E${cnr.number}`);
   styleRow(cnr,{color:"FF66707F",height:20});
+  ws.getCell("A"+cnr.number).alignment={horizontal:"right",vertical:"middle"};
   ws.addRow([]);
   const leg=ws.addRow(["ערך שלילי בסיכום = "+B+" חייבת ל"+A+"; ערך חיובי = "+A+" חייב ל"+B+"."]);
   ws.mergeCells(`A${leg.number}:E${leg.number}`);
   leg.getCell(1).font={name:X.font,size:9,italic:true,color:{argb:"FF8A919C"}};
   leg.getCell(1).alignment={horizontal:"right"};
+  autoWidth(ws,5);
+  ws.getColumn(1).width=Math.max(ws.getColumn(1).width,12);
 }
 function buildAllSheet(wb){
   const ws=wb.addWorksheet("כל הרישומים",{views:[{rightToLeft:true,state:"frozen",ySplit:1}]});
@@ -543,6 +566,8 @@ function buildAllSheet(wb){
     r.getCell(5).font={name:X.font,size:11,color:{argb: e.payer==="a"?X.a:X.b}};
   });
   ws.autoFilter={from:"A1",to:"F1"};
+  autoWidth(ws,6,8);
+  ws.getColumn(1).width=12;
 }
 $("btnXlsx").onclick=async()=>{
   if(!S.entries.length){ toast("אין עדיין נתונים לייצוא"); return; }
