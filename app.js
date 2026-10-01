@@ -421,11 +421,12 @@ $("sumCopy").onclick=async()=>{ const t=$("sumText");
 $("sumShare").onclick=async()=>{ try{ await navigator.share({text:$("sumText").value}); }catch(e){} };
 
 /* ---------- Excel export ---------- */
-function loadExcelJS(){
-  if(window.ExcelJS) return Promise.resolve();
-  return new Promise((res,rej)=>{ const s=document.createElement("script");
-    s.src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+function loadScript(src,test){
+  if(test()) return Promise.resolve();
+  return new Promise((res,rej)=>{ const s=document.createElement("script"); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
 }
+const loadExcelJS=()=>loadScript("https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js",()=>!!window.ExcelJS);
+const loadSheetJS=()=>loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",()=>!!window.XLSX);
 const X = {
   font:"Arial", money:'"₪"#,##0.00;-"₪"#,##0.00;"₪"0', date:"dd/mm/yyyy",
   navy:"FF1E2940", line:"FFD5DBD3",
@@ -435,13 +436,15 @@ const X = {
 const fill = c => ({type:"pattern",pattern:"solid",fgColor:{argb:c}});
 const border = () => { const s={style:"thin",color:{argb:X.line}}; return {top:s,bottom:s,left:s,right:s}; };
 const toDate = s => { const [y,m,d]=s.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)); };
+const colL = n => String.fromCharCode(64+n);
 
-function styleRow(row,{bg,color="FF1E2940",bold=false,size=11,height}={}){
-  row.eachCell({includeEmpty:true},(c,col)=>{ if(col>5) return;
+function styleRow(row,keys,{bg,color="FF1E2940",bold=false,size=11,height}={}){
+  row.eachCell({includeEmpty:true},(c,col)=>{ if(col>keys.length) return;
     c.font={name:X.font,size,bold,color:{argb:color}};
     if(bg) c.fill=fill(bg);
     c.border=border();
-    c.alignment=Object.assign({vertical:"middle",horizontal: (col===2||col===3)?"right":"center"}, c.alignment||{});
+    const k=keys[col-1];
+    c.alignment={vertical:"middle",horizontal:(k==="desc"||k==="cat")?"right":"center"};
   });
   if(height) row.height=height;
 }
@@ -460,105 +463,95 @@ function autoWidth(ws,ncol,min=7){
     ws.getColumn(i).width=Math.min(48,Math.max(min,Math.ceil(w+2)));
   }
 }
-function buildMonthSheet(wb, ym){
+function buildMonthSheet(wb, ym, opt){
   const [y,m]=ym.split("-").map(Number);
   const ws=wb.addWorksheet(MONTHS[m-1]+" "+y,{views:[{rightToLeft:true,showGridLines:false}],
     pageSetup:{orientation:"portrait",fitToPage:true,fitToWidth:1,fitToHeight:0,paperSize:9}});
   const items=S.entries.filter(e=>e.date.slice(0,7)===ym).sort((a,b)=>a.date.localeCompare(b.date)||String(a.created_at).localeCompare(String(b.created_at)));
   const B=S.nameB, A=S.nameA;
+  const keys=[]; if(opt.date) keys.push("date"); keys.push("desc"); if(opt.cat) keys.push("cat"); keys.push("b","a");
+  const N=keys.length, ci=k=>keys.indexOf(k)+1, L=k=>colL(ci(k)), LAST=colL(N), LBL_END=colL(ci("b")-1);
+  const vals=o=>keys.map(k=>o[k]===undefined?"":o[k]);
+  const merge=(r,a,b)=>{ if(a!==b) ws.mergeCells(`${a}${r}:${b}${r}`); };
+  const rightA=r=>{ ws.getCell("A"+r).alignment={horizontal:"right",vertical:"middle"}; };
 
-  ws.mergeCells("A1:E1");
+  ws.mergeCells(`A1:${LAST}1`);
   ws.getCell("A1").value="סיכום תשלומים לחודש "+MONTHS[m-1]+" "+y;
-  styleRow(ws.getRow(1),{bg:X.navy,color:"FFFFFFFF",bold:true,size:16,height:34});
+  styleRow(ws.getRow(1),keys,{bg:X.navy,color:"FFFFFFFF",bold:true,size:16,height:34});
   ws.getCell("A1").alignment={horizontal:"center",vertical:"middle"};
   ws.addRow([]).height=8;
 
-  // section builder; returns {totRow}
   const section=(type,title,head,headL,totLabel)=>{
     const rows=items.filter(e=>e.type===type);
-    const hr=ws.addRow(["תאריך",title,"קטגוריה",B,A]);
-    styleRow(hr,{bg:head,color:"FFFFFFFF",bold:true,size:12,height:24});
+    const hr=ws.addRow(vals({date:"תאריך",desc:title,cat:"קטגוריה",b:B,a:A}));
+    styleRow(hr,keys,{bg:head,color:"FFFFFFFF",bold:true,size:12,height:24});
     const first=hr.number+1;
     rows.forEach((e,i)=>{
-      const r=ws.addRow([toDate(e.date), type==="transfer"?transferText(e):(e.description||""), e.category||"", e.payer==="b"?+e.amount:null, e.payer==="a"?+e.amount:null]);
-      styleRow(r,{bg:i%2?X.zebra:"FFFFFFFF",height:20});
+      const r=ws.addRow(vals({date:toDate(e.date),desc:type==="transfer"?transferText(e):(e.description||""),cat:e.category||"",
+        b:e.payer==="b"?+e.amount:null,a:e.payer==="a"?+e.amount:null}));
+      styleRow(r,keys,{bg:i%2?X.zebra:"FFFFFFFF",height:20});
     });
-    if(!rows.length){ const r=ws.addRow(["","אין רישומים"]); styleRow(r,{color:"FF8A919C",height:20}); }
+    if(!rows.length){ const r=ws.addRow(vals({desc:"אין רישומים"})); styleRow(r,keys,{color:"FF8A919C",height:20}); }
     const last=ws.lastRow.number;
-    const tr=ws.addRow(["",totLabel,"",
-      {formula:`SUM(D${first}:D${last})`, result:sumBy(rows,type,"b")},
-      {formula:`SUM(E${first}:E${last})`, result:sumBy(rows,type,"a")}]);
-    styleRow(tr,{bg:headL,bold:true,height:22});
+    const tr=ws.addRow(vals({desc:totLabel,
+      b:{formula:`SUM(${L("b")}${first}:${L("b")}${last})`, result:sumBy(rows,type,"b")},
+      a:{formula:`SUM(${L("a")}${first}:${L("a")}${last})`, result:sumBy(rows,type,"a")}}));
+    styleRow(tr,keys,{bg:headL,bold:true,height:22});
     for(let r=first;r<=tr.number;r++){
-      ws.getCell("A"+r).numFmt=X.date;
-      ws.getCell("D"+r).numFmt=X.money; ws.getCell("E"+r).numFmt=X.money;
-      ws.getCell("D"+r).font=Object.assign({},ws.getCell("D"+r).font,{color:{argb:X.b}});
-      ws.getCell("E"+r).font=Object.assign({},ws.getCell("E"+r).font,{color:{argb:X.a}});
+      if(opt.date) ws.getCell(L("date")+r).numFmt=X.date;
+      for(const p of ["b","a"]){ const c=ws.getCell(L(p)+r); c.numFmt=X.money; c.font=Object.assign({},c.font,{color:{argb:X[p]}}); }
     }
     return tr.number;
   };
-  const calcRow=(label,formula,result,bg)=>{
-    const r=ws.addRow([label,"","",{formula,result},""]);
-    ws.mergeCells(`A${r.number}:C${r.number}`);
-    styleRow(r,{bg,bold:true,height:22});
-    ws.getCell("A"+r.number).alignment={horizontal:"right",vertical:"middle"};
-    ws.getCell("D"+r.number).numFmt=X.money;
-    return r.number;
+  const labelRow=(label,valueCell,style)=>{
+    const o={b:valueCell}; const r=ws.addRow(vals(o)); r.getCell(1).value=label;
+    merge(r.number,"A",LBL_END); styleRow(r,keys,style); rightA(r.number);
+    ws.getCell(L("b")+r.number).numFmt=X.money; return r.number;
   };
+  const noteRow=(text,style)=>{ const r=ws.addRow([text]); merge(r.number,"A",LAST); styleRow(r,keys,style); rightA(r.number); return r; };
+  const lb=L("b"), la=L("a");
 
   const eTot=section("expense","סוג הוצאה",X.exp,X.expL,'סה"כ הוצאות');
   const eB=sumBy(items,"expense","b"), eA=sumBy(items,"expense","a");
-  const eCalc=calcRow("חישוב הוצאות",`(D${eTot}-E${eTot})/2`,(eB-eA)/2,X.expL);
+  const eCalc=labelRow("חישוב הוצאות",{formula:`(${lb}${eTot}-${la}${eTot})/2`,result:(eB-eA)/2},{bg:X.expL,bold:true,height:22});
   ws.addRow([]).height=10;
   const iTot=section("income","סוג הכנסה / החזר",X.inc,X.incL,'סה"כ הכנסות');
   const iB=sumBy(items,"income","b"), iA=sumBy(items,"income","a");
-  const iCalc=calcRow("חישוב הכנסות",`(E${iTot}-D${iTot})/2`,(iA-iB)/2,X.incL);
-  let parts=[`D${eCalc}`,`D${iCalc}`], result=(eB-eA)/2+(iA-iB)/2;
-  if(items.some(e=>e.type==="transfer")){
+  const iCalc=labelRow("חישוב הכנסות",{formula:`(${la}${iTot}-${lb}${iTot})/2`,result:(iA-iB)/2},{bg:X.incL,bold:true,height:22});
+  const parts=[`${lb}${eCalc}`,`${lb}${iCalc}`]; let result=(eB-eA)/2+(iA-iB)/2;
+  const hasTr=items.some(e=>e.type==="transfer");
+  if(hasTr){
     ws.addRow([]).height=10;
     const tTot=section("transfer","העברות ביניכם",X.tr,X.trL,'סה"כ העברות');
-    parts.push(`(D${tTot}-E${tTot})`);
+    parts.push(`(${lb}${tTot}-${la}${tTot})`);
     result+=sumBy(items,"transfer","b")-sumBy(items,"transfer","a");
   }
   ws.addRow([]).height=10;
-
-  const fr=ws.addRow(["סיכום סופי","","",{formula:parts.join("+"),result},""]);
-  ws.mergeCells(`A${fr.number}:C${fr.number}`);
-  styleRow(fr,{bg:X.navy,color:"FFFFFFFF",bold:true,size:13,height:28});
-  ws.getCell("A"+fr.number).alignment={horizontal:"right",vertical:"middle"};
-  ws.getCell("D"+fr.number).numFmt=X.money;
+  labelRow("סיכום סופי",{formula:parts.join("+"),result},{bg:X.navy,color:"FFFFFFFF",bold:true,size:13,height:28});
   const ow=owesText(-result);
-  const note=ws.addRow([ ow ? ow+" "+money(result)+(items.some(e=>e.type==="transfer")?" (אחרי העברות)":"") : "החודש מאוזן" ]);
-  ws.mergeCells(`A${note.number}:E${note.number}`);
-  styleRow(note,{bold:true,size:12,height:24,color: result<0?"FF3F7A5A":"FFA94F38"});
-  ws.getCell("A"+note.number).alignment={horizontal:"right",vertical:"middle"};
-
-  const cum=Math.round(-100*S.entries.filter(e=>e.date.slice(0,7)<=ym).reduce((s,e)=>s+effect(e),0))/100;
-  const cr=ws.addRow(["יתרה מצטברת עד סוף החודש","","",cum,""]);
-  ws.mergeCells(`A${cr.number}:C${cr.number}`);
-  styleRow(cr,{bg:"FFEFF1EC",bold:true,height:22});
-  ws.getCell("A"+cr.number).alignment={horizontal:"right",vertical:"middle"};
-  ws.getCell("D"+cr.number).numFmt=X.money;
-  const cn=owesText(-cum);
-  const cnr=ws.addRow([cn? cn+" "+money(cum)+" (כולל חודשים קודמים)" : "מאוזנים עד סוף החודש"]);
-  ws.mergeCells(`A${cnr.number}:E${cnr.number}`);
-  styleRow(cnr,{color:"FF66707F",height:20});
-  ws.getCell("A"+cnr.number).alignment={horizontal:"right",vertical:"middle"};
-  ws.addRow([]);
-  const leg=ws.addRow(["ערך שלילי בסיכום = "+B+" חייבת ל"+A+"; ערך חיובי = "+A+" חייב ל"+B+"."]);
-  ws.mergeCells(`A${leg.number}:E${leg.number}`);
-  leg.getCell(1).font={name:X.font,size:9,italic:true,color:{argb:"FF8A919C"}};
-  leg.getCell(1).alignment={horizontal:"right"};
-  autoWidth(ws,5);
-  ws.getColumn(1).width=Math.max(ws.getColumn(1).width,12);
+  noteRow(ow ? ow+" "+money(result)+(hasTr?" (אחרי העברות)":"") : "החודש מאוזן",{bold:true,size:12,height:24,color: result<0?"FF3F7A5A":"FFA94F38"});
+  if(opt.notes){
+    const cum=Math.round(-100*S.entries.filter(e=>e.date.slice(0,7)<=ym).reduce((s,e)=>s+effect(e),0))/100;
+    labelRow("יתרה מצטברת עד סוף החודש",cum,{bg:"FFEFF1EC",bold:true,height:22});
+    const cn=owesText(-cum);
+    noteRow(cn? cn+" "+money(cum)+" (כולל חודשים קודמים)" : "מאוזנים עד סוף החודש",{color:"FF66707F",height:20});
+    ws.addRow([]);
+    const leg=ws.addRow(["ערך שלילי בסיכום = "+B+" חייבת ל"+A+"; ערך חיובי = "+A+" חייב ל"+B+"."]);
+    merge(leg.number,"A",LAST);
+    leg.getCell(1).font={name:X.font,size:9,italic:true,color:{argb:"FF8A919C"}};
+    leg.getCell(1).alignment={horizontal:"right"};
+  }
+  autoWidth(ws,N);
+  if(opt.date) ws.getColumn(ci("date")).width=Math.max(ws.getColumn(ci("date")).width,12);
+  ws.getColumn(ci("desc")).width=Math.max(ws.getColumn(ci("desc")).width,20);
 }
-function buildAllSheet(wb){
+function buildAllSheet(wb, months){
   const ws=wb.addWorksheet("כל הרישומים",{views:[{rightToLeft:true,state:"frozen",ySplit:1}]});
-  ws.columns=[{header:"תאריך",width:13},{header:"סוג",width:12},{header:"תיאור",width:36},{header:"קטגוריה",width:15},{header:"מי",width:10},{header:"סכום",width:14}];
+  ws.columns=[{header:"תאריך"},{header:"סוג"},{header:"תיאור"},{header:"קטגוריה"},{header:"מי"},{header:"סכום"}];
   const TL={expense:"הוצאה",income:"הכנסה",transfer:"העברה"};
   const head=ws.getRow(1); head.height=24;
   head.eachCell(c=>{ c.font={name:X.font,bold:true,color:{argb:"FFFFFFFF"}}; c.fill=fill(X.navy); c.alignment={horizontal:"center",vertical:"middle"}; });
-  S.entries.slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach((e,i)=>{
+  S.entries.filter(e=>months.includes(e.date.slice(0,7))).sort((a,b)=>a.date.localeCompare(b.date)).forEach((e,i)=>{
     const r=ws.addRow([toDate(e.date),TL[e.type],e.type==="transfer"?transferText(e):(e.description||""),e.category||"",nm(e.payer),+e.amount]);
     r.eachCell({includeEmpty:true},c=>{ c.font={name:X.font,size:11}; c.border=border(); if(i%2) c.fill=fill(X.zebra); });
     r.getCell(1).numFmt=X.date; r.getCell(6).numFmt=X.money;
@@ -566,27 +559,192 @@ function buildAllSheet(wb){
     r.getCell(5).font={name:X.font,size:11,color:{argb: e.payer==="a"?X.a:X.b}};
   });
   ws.autoFilter={from:"A1",to:"F1"};
-  autoWidth(ws,6,8);
-  ws.getColumn(1).width=12;
+  autoWidth(ws,6,8); ws.getColumn(1).width=12;
 }
-$("btnXlsx").onclick=async()=>{
+
+// export dialog
+const allMonths=()=>[...new Set(S.entries.map(e=>e.date.slice(0,7)))].sort().reverse();
+$("btnXlsx").onclick=()=>{
   if(!S.entries.length){ toast("אין עדיין נתונים לייצוא"); return; }
-  const btn=$("btnXlsx"); btn.disabled=true; toast("מכין קובץ אקסל…");
+  const box=$("xMonths"); box.innerHTML="";
+  for(const ym of allMonths()){
+    const [y,m]=ym.split("-").map(Number);
+    const l=document.createElement("label"); const c=document.createElement("input");
+    c.type="checkbox"; c.value=ym; c.checked=true; l.append(c," "+MONTHS[m-1]+" "+y); box.appendChild(l);
+  }
+  $("xErr").textContent=""; $("xScrim").classList.add("open");
+};
+$("xAll").onclick=()=>{ const cs=[...document.querySelectorAll("#xMonths input")]; const on=!cs.every(c=>c.checked); cs.forEach(c=>c.checked=on); };
+$("xCancel").onclick=closeSheets;
+$("xGo").onclick=async()=>{
+  const months=[...document.querySelectorAll("#xMonths input:checked")].map(c=>c.value).sort();
+  if(!months.length){ $("xErr").textContent="יש לבחור לפחות חודש אחד."; return; }
+  const opt={date:$("xDate").checked,cat:$("xCat").checked,notes:$("xNotes").checked};
+  const btn=$("xGo"); btn.disabled=true; $("xErr").textContent="";
   try{
     await loadExcelJS();
     const wb=new ExcelJS.Workbook(); wb.creator="חצי חצי";
-    const months=[...new Set(S.entries.map(e=>e.date.slice(0,7)))].sort();
-    months.forEach(ym=>buildMonthSheet(wb,ym));
-    buildAllSheet(wb);
+    months.forEach(ym=>buildMonthSheet(wb,ym,opt));
+    if($("xFlat").checked) buildAllSheet(wb,months);
     const idx=Math.max(0,months.indexOf(S.month));
     wb.views=[{activeTab:idx,firstSheet:0,visibility:"visible"}];
     const buf=await wb.xlsx.writeBuffer();
     const a=document.createElement("a");
     a.href=URL.createObjectURL(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
-    a.download="הוצאות-הילדים.xlsx"; document.body.appendChild(a); a.click(); a.remove();
+    const [y,m]=months[months.length-1].split("-").map(Number);
+    a.download= months.length===1 ? "הוצאות הילדים - "+MONTHS[m-1]+" "+y+".xlsx" : "הוצאות הילדים.xlsx";
+    document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  }catch(e){ toast(navigator.onLine?"יצירת הקובץ נכשלה":"צריך חיבור לאינטרנט ליצירת הקובץ"); }
+    closeSheets();
+  }catch(e){ $("xErr").textContent=navigator.onLine?"יצירת הקובץ נכשלה.":"צריך חיבור לאינטרנט ליצירת הקובץ."; }
   btn.disabled=false;
+};
+
+/* ---------- Excel import ---------- */
+const clean = v => String(v==null?"":v).trim();
+function findMonth(text){
+  for(let i=0;i<12;i++) if(text.includes(MONTHS[i])){ const y=text.match(/20\d\d/); if(y) return y[0]+"-"+pad(i+1); }
+  return null;
+}
+function cellDate(v){
+  if(v==null||v==="") return null;
+  if(v instanceof Date){ const d=new Date(v.getTime()+12*3600e3); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
+  if(typeof v==="number"){ const p=XLSX.SSF.parse_date_code(v); return p? p.y+"-"+pad(p.m)+"-"+pad(p.d) : null; }
+  const s=clean(v); let m;
+  if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return m[1]+"-"+pad(m[2])+"-"+pad(m[3]);
+  if((m=s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})$/))){ const y=m[3].length===2?"20"+m[3]:m[3]; return y+"-"+pad(m[2])+"-"+pad(m[1]); }
+  return null;
+}
+const toNum = v => typeof v==="number" ? v : parseFloat(clean(v).replace(/[₪,\s]/g,""));
+function parseWorkbook(wb){
+  const out=[];
+  const TL={"הוצאה":"expense","הכנסה":"income","החזר":"income","העברה":"transfer"};
+  for(const name of wb.SheetNames){
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:""});
+    let month=findMonth(name);
+    for(let r=0;r<Math.min(rows.length,4)&&!month;r++) for(const c of rows[r]){ month=findMonth(clean(c)); if(month) break; }
+
+    // flat list (like "כל הרישומים")
+    const fh=rows.findIndex(r=>{ const c=r.map(clean); return c.includes("סכום") && c.includes("מי"); });
+    if(fh>=0){
+      const h=rows[fh].map(clean), I=k=>h.indexOf(k);
+      for(const row of rows.slice(fh+1)){
+        const amt=toNum(row[I("סכום")]); if(!amt) continue;
+        const who=clean(row[I("מי")]); const payer= who===S.nameA?"a": who===S.nameB?"b": null; if(!payer) continue;
+        const type=TL[clean(row[I("סוג")])]||"expense";
+        out.push({type,payer,amount:Math.round(Math.abs(amt)*100)/100,
+          description: type==="transfer"?"":clean(row[I("תיאור")]), category: type==="transfer"?"":clean(row[I("קטגוריה")]),
+          date:I("תאריך")>=0?cellDate(row[I("תאריך")]):null, month, sheet:name});
+      }
+      continue;
+    }
+
+    // monthly summary (like the original sheet / this app's export)
+    let sec=null;
+    for(const row of rows){
+      const c=row.map(clean);
+      const ib=c.indexOf(S.nameB), ia=c.indexOf(S.nameA);
+      if(ib>=0 && ia>=0){
+        const j=c.join(" ");
+        const type=/העבר/.test(j)?"transfer":/החזר|הכנס|קצב/.test(j)?"income":"expense";
+        const id=c.indexOf("תאריך"), ic=c.indexOf("קטגוריה");
+        const idesc=c.findIndex((v,i)=>v && ![ib,ia,id,ic].includes(i));
+        sec={type,ib,ia,id,ic,idesc:idesc>=0?idesc:0}; continue;
+      }
+      if(!sec) continue;
+      const desc=c[sec.idesc];
+      if(/^(סיכום|יתרה)/.test(desc)){ sec=null; continue; }
+      if(!desc || /^(סה.?.?כ|חישוב)/.test(desc)) continue;
+      for(const [p,i] of [["b",sec.ib],["a",sec.ia]]){
+        const n=toNum(row[i]); if(!n||isNaN(n)) continue;
+        out.push({type:sec.type,payer:p,amount:Math.round(Math.abs(n)*100)/100,
+          description: sec.type==="transfer"?"":desc, category: sec.ic>=0?c[sec.ic]:"",
+          date: sec.id>=0?cellDate(row[sec.id]):null, month, sheet:name});
+      }
+    }
+  }
+  return out;
+}
+
+let IMP=[];
+const dupKey=e=>[e.type,e.payer,(+e.amount).toFixed(2),e.date,e.description||""].join("|");
+function prepareImport(rows){
+  const known=new Map(); S.entries.forEach(e=>{ if(e.description&&e.category&&!known.has(e.description)) known.set(e.description,e.category); });
+  const existing=new Set(S.entries.map(dupKey));
+  rows.forEach(r=>{
+    if(!r.category && r.description && known.has(r.description)) r.category=known.get(r.description);
+    r.group = r.date ? r.date.slice(0,7) : (r.month || "?");
+    if(!r.date && r.month) r.date=r.month+"-01";
+  });
+  // the same entries may appear on several sheets (monthly + "all entries"): keep each once
+  const added=new Map(), result=[];
+  for(const sh of [...new Set(rows.map(r=>r.sheet))]){
+    const local=new Map();
+    for(const r of rows.filter(x=>x.sheet===sh)){
+      const k=dupKey(r), j=(local.get(k)||0)+1; local.set(k,j);
+      if(!r.date || j>(added.get(k)||0)) result.push(r);
+    }
+    for(const [k,j] of local) added.set(k,Math.max(added.get(k)||0,j));
+  }
+  result.forEach(r=>{ r.dup = !!r.date && existing.has(dupKey(r)); r.on = !r.dup; });
+  return result;
+}
+function renderImport(){
+  const body=$("iBody"); body.innerHTML="";
+  const groups=[...new Set(IMP.map(r=>r.group))].sort();
+  for(const g of groups){
+    const rows=IMP.filter(r=>r.group===g);
+    const h=document.createElement("div"); h.className="igh";
+    if(g==="?"){
+      h.append("חודש לא זוהה, בחר חודש: ");
+      const inp=document.createElement("input"); inp.type="month"; inp.value=S.month;
+      inp.onchange=()=>{ rows.forEach(r=>{ r.date=inp.value+"-01"; }); };
+      rows.forEach(r=>{ if(!r.date) r.date=S.month+"-01"; });
+      h.appendChild(inp);
+    } else { const [y,m]=g.split("-").map(Number); h.textContent=MONTHS[m-1]+" "+y; }
+    body.appendChild(h);
+    for(const r of rows){
+      const l=document.createElement("label"); l.className="irow"+(r.dup?" dup":"");
+      const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=r.on; cb.onchange=()=>{ r.on=cb.checked; updImp(); };
+      const pb=document.createElement("span"); pb.className="pb sm "+r.payer; pb.textContent=nm(r.payer).slice(0,1);
+      const d=document.createElement("span"); d.className="id";
+      d.textContent=(r.type==="transfer"?transferText(r):r.description||"")+(r.type==="income"?" (הכנסה)":"")+(r.dup?" · קיים כבר":"");
+      const a=document.createElement("span"); a.className="ltr num"; a.textContent=money(r.amount);
+      l.append(cb,pb,d,a); body.appendChild(l);
+    }
+  }
+  updImp();
+}
+function updImp(){
+  const n=IMP.filter(r=>r.on).length, d=IMP.filter(r=>r.dup).length;
+  $("iSummary").textContent="נמצאו "+IMP.length+" רישומים"+(d?", מתוכם "+d+" כבר קיימים באפליקציה (לא מסומנים)":"")+".";
+  $("iGo").textContent="ייבוא "+n+" רישומים"; $("iGo").disabled=!n;
+}
+$("btnImport").onclick=()=>{ $("impFile").value=""; $("impFile").click(); };
+$("impFile").onchange=async()=>{
+  const f=$("impFile").files[0]; if(!f) return;
+  toast("קורא את הקובץ…");
+  try{
+    await loadSheetJS();
+    const wb=XLSX.read(await f.arrayBuffer(),{type:"array",cellDates:true});
+    const rows=parseWorkbook(wb);
+    if(!rows.length){ toast("לא נמצאו רישומים. ודא שבכותרות מופיעים השמות "+S.nameB+" ו"+S.nameA+"."); return; }
+    IMP=prepareImport(rows); $("iErr").textContent=""; renderImport();
+    $("iScrim").classList.add("open");
+  }catch(e){ toast(navigator.onLine?"לא הצלחתי לקרוא את הקובץ":"צריך חיבור לאינטרנט לייבוא"); }
+};
+$("iCancel").onclick=closeSheets;
+$("iGo").onclick=async()=>{
+  const sel=IMP.filter(r=>r.on); if(!sel.length) return;
+  const btn=$("iGo"); btn.disabled=true;
+  const t0=Date.now();
+  const rows=sel.map((r,i)=>({user_id:S.user.id,type:r.type,payer:r.payer,amount:r.amount,date:r.date,description:r.description||"",category:r.category||"",created_at:new Date(t0+i*1000).toISOString()}));
+  const {error}=await sb.from(T_ENT).insert(rows);
+  if(error){ $("iErr").textContent="הייבוא נכשל. בדוק את החיבור ונסה שוב."; btn.disabled=false; return; }
+  const newCats=[...new Set(sel.map(r=>r.category).filter(c=>c&&!S.cats.includes(c)))];
+  if(newCats.length){ S.cats=S.cats.concat(newCats); try{ await saveSettings(); }catch(e){} }
+  S.month=rows[rows.length-1].date.slice(0,7);
+  closeSheets(); toast(rows.length+" רישומים יובאו"); loadAll();
 };
 
 document.querySelectorAll(".scrim").forEach(s=>s.addEventListener("click",ev=>{ if(ev.target===s && s.id!=="pwScrim") closeSheets(); }));

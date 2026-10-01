@@ -139,6 +139,19 @@ input[type=text],input[type=date],input[type=email],input[type=password],textare
 .namegrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .acct{font-size:14px;color:var(--muted);margin-top:22px;padding-top:14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}
 .tools button:disabled{opacity:.5}
+.checks{display:flex;flex-direction:column}
+.checks label{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:16px}
+.checks input,.irow input{width:20px;height:20px;accent-color:var(--ink)}
+#xMonths{display:grid;grid-template-columns:1fr 1fr}
+.hint{color:var(--muted);font-size:14px;margin:4px 0 0}
+.hrow{display:flex;justify-content:space-between;align-items:center}
+.hrow .link{font-size:14px;font-weight:400}
+.igh{font-weight:700;margin:16px 0 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.igh input{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink)}
+.irow{display:grid;grid-template-columns:auto auto 1fr auto;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:15px}
+.irow.dup{opacity:.55}
+.irow .id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pb.sm{width:24px;height:24px;font-size:12px}
 .toast{position:fixed;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:999px;font-size:15px;z-index:20;display:none}
 textarea{min-height:240px;font-size:15px;line-height:1.5}
 
@@ -190,9 +203,9 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
   </section>
 
   <div class="monthbar">
-    <button id="nextM" aria-label="חודש הבא"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button id="prevM" aria-label="חודש קודם"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <h2 id="monthTitle"></h2>
-    <button id="prevM" aria-label="חודש קודם"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button id="nextM" aria-label="חודש הבא"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
 
   <div class="people">
@@ -231,6 +244,8 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
   <div class="tools">
     <button id="btnCopy">סיכום לשליחה</button>
     <button id="btnXlsx">ייצוא לאקסל</button>
+    <button id="btnImport">ייבוא מאקסל</button>
+    <input type="file" id="impFile" accept=".xlsx,.xls,.csv" hidden>
   </div>
 </div>
 <div class="fab"><button id="btnAdd">+ רישום חדש</button></div>
@@ -315,6 +330,43 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     <input id="pwNew" type="password" autocomplete="new-password" dir="ltr" placeholder="לפחות 6 תווים">
     <div class="err" id="pwErr"></div>
     <div class="actions"><button class="primary" id="pwSave">עדכון סיסמה</button></div>
+  </div>
+</div>
+
+<!-- export sheet -->
+<div class="scrim" id="xScrim">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="xTitle">
+    <h3 id="xTitle">ייצוא לאקסל</h3>
+    <h4>עמודות</h4>
+    <div class="checks">
+      <label><input type="checkbox" id="xDate" checked> תאריך</label>
+      <label><input type="checkbox" id="xCat" checked> קטגוריה</label>
+      <label><input type="checkbox" id="xNotes" checked> יתרה מצטברת ושורות הסבר</label>
+    </div>
+    <p class="hint">התיאור והסכומים של כל הורה מופיעים תמיד.</p>
+    <h4 class="hrow">חודשים (כל חודש בגיליון נפרד) <button class="link" id="xAll">בחר/נקה הכול</button></h4>
+    <div class="checks" id="xMonths"></div>
+    <h4>נוסף</h4>
+    <div class="checks"><label><input type="checkbox" id="xFlat" checked> גיליון "כל הרישומים" של החודשים שנבחרו</label></div>
+    <div class="err" id="xErr"></div>
+    <div class="actions">
+      <button class="primary" id="xGo">ייצוא</button>
+      <button class="ghost" id="xCancel">ביטול</button>
+    </div>
+  </div>
+</div>
+
+<!-- import sheet -->
+<div class="scrim" id="iScrim">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="iTitle">
+    <h3 id="iTitle">ייבוא מאקסל</h3>
+    <p class="hint" id="iSummary"></p>
+    <div id="iBody"></div>
+    <div class="err" id="iErr"></div>
+    <div class="actions">
+      <button class="primary" id="iGo">ייבוא</button>
+      <button class="ghost" id="iCancel">ביטול</button>
+    </div>
   </div>
 </div>
 
