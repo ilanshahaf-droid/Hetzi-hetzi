@@ -442,27 +442,34 @@ async function markFileBackup(){
   S.prefs.last_file=new Date().toISOString(); S.bannerHidden=true; renderBanner();
   try{ await saveSettings(); }catch(e){}
 }
-async function downloadBackup(){
+// built from what is already loaded, so sharing happens right on the tap (Android requires that)
+function buildBackupData(){
+  return {app:"hetzi-hetzi", version:1, created_at:new Date().toISOString(),
+    settings:{categories:S.cats,name_a:S.nameA,name_b:S.nameB},
+    entries:S.entries.map(e=>pick(e,ENT_COLS)), recurring:(S.rec||[]).map(t=>pick(t,REC_COLS))};
+}
+const backupText=()=>JSON.stringify(buildBackupData(),null,1);
+function downloadBackup(){
   try{
-    const data=await fetchAllData();
     const a=document.createElement("a");
-    a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,1)],{type:"application/json"}));
+    a.href=URL.createObjectURL(new Blob([backupText()],{type:"application/json"}));
     a.download=backupFileName(); document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-    toast("קובץ הגיבוי ירד לטלפון"); await markFileBackup();
-  }catch(e){ toast("הגיבוי נכשל. בדוק את החיבור"); }
+    toast("קובץ הגיבוי נשמר בתיקיית ההורדות"); markFileBackup();
+  }catch(e){ toast("ההורדה נכשלה"); }
 }
-async function shareBackup(){
-  try{
-    const data=await fetchAllData();
-    const file=new File([JSON.stringify(data,null,1)],backupFileName(),{type:"application/json"});
-    if(!(navigator.canShare&&navigator.canShare({files:[file]}))){ return downloadBackup(); }
-    await navigator.share({files:[file],title:"גיבוי חצי חצי"});
-    await markFileBackup();
-  }catch(e){ if(e&&e.name!=="AbortError") toast("השיתוף נכשל"); }
+function shareBackup(){
+  // Android shares only certain file types, so the (JSON) backup is shared as a .txt file
+  let file;
+  try{ file=new File([backupText()],backupFileName().replace(/\.json$/,".txt"),{type:"text/plain"}); }catch(e){ return downloadBackup(); }
+  if(!(navigator.share && navigator.canShare && navigator.canShare({files:[file]}))) return downloadBackup();
+  navigator.share({files:[file],title:"גיבוי חצי חצי"})
+    .then(()=>{ toast("הגיבוי נשמר"); markFileBackup(); })
+    .catch(e=>{ if(e&&e.name==="AbortError") return; toast("השיתוף לא נתמך, הקובץ ירד במקום"); downloadBackup(); });
 }
 function renderBanner(){
   const b=$("bkBanner"); if(!b) return;
+  $("bkBannerShare").hidden=!navigator.share;
   const d=FREQ_DAYS[S.prefs.remind];
   const due = S.user && S.entries.length && d && !S.bannerHidden && daysSince(S.prefs.last_file) >= d;
   b.hidden=!due;
@@ -532,7 +539,8 @@ $("bkRemind").onchange=async()=>{ S.prefs.remind=$("bkRemind").value; S.bannerHi
 $("bkNow").onclick=async()=>{ const ok=await makeSnapshot("manual"); toast(ok?"נשמר גיבוי בענן":"הגיבוי נכשל"); openBackup(); };
 $("bkDownload").onclick=downloadBackup;
 $("bkShare").onclick=shareBackup;
-$("bkBannerGo").onclick=()=> navigator.share ? shareBackup() : downloadBackup();
+$("bkBannerGo").onclick=downloadBackup;
+$("bkBannerShare").onclick=shareBackup;
 $("bkBannerLater").onclick=()=>{ S.bannerHidden=true; renderBanner(); };
 $("bkRestoreFile").onclick=()=>{ $("bkFile").value=""; $("bkFile").click(); };
 $("bkFile").onchange=async()=>{
