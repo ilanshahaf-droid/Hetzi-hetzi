@@ -10,7 +10,7 @@ const signed = n => (n<0?"−":"+") + money(n);
 const pad = n => String(n).padStart(2,"0");
 const today = () => { const d=new Date(); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); };
 
-const S = { user:null, entries:[], rec:[], recOk:false, cats:DEFAULT_CATS.slice(), nameA:"אילן", nameB:"קרן", month:today().slice(0,7), who:"all", kind:"all", online:navigator.onLine };
+const S = { user:null, entries:[], rec:[], recOk:false, bkOk:false, backups:[], prefs:{freq:"weekly",remind:"monthly",last_file:null}, bannerHidden:false, cats:DEFAULT_CATS.slice(), nameA:"אילן", nameB:"קרן", month:today().slice(0,7), who:"all", kind:"all", online:navigator.onLine };
 
 /* ---------- Supabase ---------- */
 const cfg = window.HETZI_CONFIG || {};
@@ -73,7 +73,7 @@ $("btnLogout").onclick = async()=>{ closeSheets(); await sb.auth.signOut(); };
 function setUser(u){
   const prev = S.user && S.user.id;
   S.user = u;
-  if(!u){ S.entries=[]; show("auth"); return; }
+  if(!u){ S.entries=[]; S.backups=[]; S.bannerHidden=false; show("auth"); return; }
   if(prev===u.id) return;
   $("acctEmail").textContent = u.email || "";
   loadCache(); show("app"); render(); loadAll();
@@ -96,6 +96,7 @@ async function loadAll(){
   if(st.data){
     S.cats = Array.isArray(st.data.categories) && st.data.categories.length ? st.data.categories : DEFAULT_CATS.slice();
     S.nameA = st.data.name_a || "אילן"; S.nameB = st.data.name_b || "קרן";
+    if(st.data.prefs) S.prefs = Object.assign({freq:"weekly",remind:"monthly",last_file:null}, st.data.prefs);
   } else {
     await saveSettings();
   }
@@ -109,9 +110,17 @@ async function loadAll(){
     }catch(e){}
     S.recBusy=false;
   }
+  if(!S.bkBusy){
+    S.bkBusy=true;
+    try{ await loadBackupState(); await autoBackup(); }catch(e){}
+    S.bkBusy=false;
+  }
+  renderBanner();
 }
 async function saveSettings(){
-  const {error} = await sb.from(T_SET).upsert({user_id:S.user.id, categories:S.cats, name_a:S.nameA, name_b:S.nameB, updated_at:new Date().toISOString()});
+  const row={user_id:S.user.id, categories:S.cats, name_a:S.nameA, name_b:S.nameB, updated_at:new Date().toISOString()};
+  if(S.bkOk) row.prefs=S.prefs;
+  const {error} = await sb.from(T_SET).upsert(row);
   if(error) throw error;
   saveCache();
 }
@@ -387,6 +396,151 @@ async function createRecurring(entry,interval,end){
   if(error) throw error;
   S.rec.push(data); return data;
 }
+
+/* ---------- backup ---------- */
+const T_BK = "hetzi_backups", BK_KEEP = 12;
+const FREQ_DAYS = {daily:1, weekly:7, monthly:30, off:0};
+const BK_KIND = {auto:"אוטומטי", manual:"ידני", "before-restore":"לפני שחזור", "before-import":"לפני ייבוא"};
+const ENT_COLS = ["id","type","payer","amount","date","description","category","created_at","recurring_id"];
+const REC_COLS = ["id","type","payer","amount","description","category","day","interval_months","start_month","end_month","last_generated","active","created_at"];
+const pick=(o,cols)=>{ const r={}; cols.forEach(c=>{ if(o[c]!==undefined) r[c]=o[c]; }); return r; };
+const daysSince=iso=> iso ? (Date.now()-new Date(iso).getTime())/864e5 : Infinity;
+const fmtDT=iso=>new Date(iso).toLocaleString("he-IL",{day:"numeric",month:"numeric",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+
+async function fetchAllData(){
+  const en=await sb.from(T_ENT).select("*"); if(en.error) throw en.error;
+  let rec=[]; if(S.recOk){ const r=await sb.from(T_REC).select("*"); if(!r.error) rec=r.data; }
+  return {app:"hetzi-hetzi", version:1, created_at:new Date().toISOString(),
+    settings:{categories:S.cats,name_a:S.nameA,name_b:S.nameB},
+    entries:en.data.map(e=>pick(e,ENT_COLS)), recurring:rec.map(t=>pick(t,REC_COLS))};
+}
+async function loadBackupState(){
+  const {data,error}=await sb.from(T_BK).select("id,created_at,kind,entry_count").order("created_at",{ascending:false});
+  S.bkOk=!error; S.backups=error?[]:data;
+}
+async function makeSnapshot(kind){
+  if(!S.bkOk) return false;
+  const data=await fetchAllData();
+  if(kind==="auto" && !data.entries.length) return false;
+  const {data:row,error}=await sb.from(T_BK).insert({user_id:S.user.id,kind,entry_count:data.entries.length,data}).select("id,created_at,kind,entry_count").single();
+  if(error) return false;
+  S.backups.unshift(row);
+  const old=S.backups.slice(BK_KEEP);
+  if(old.length){ await sb.from(T_BK).delete().in("id",old.map(b=>b.id)); S.backups=S.backups.slice(0,BK_KEEP); }
+  return true;
+}
+async function autoBackup(){
+  if(!S.bkOk) return;
+  const days=FREQ_DAYS[S.prefs.freq]; if(!days) return;
+  const lastAuto=S.backups.find(b=>b.kind==="auto");
+  if(daysSince(lastAuto&&lastAuto.created_at) >= days-0.04) await makeSnapshot("auto");
+}
+
+// file backup
+function backupFileName(){ return "גיבוי חצי חצי "+today()+".json"; }
+async function markFileBackup(){
+  S.prefs.last_file=new Date().toISOString(); S.bannerHidden=true; renderBanner();
+  try{ await saveSettings(); }catch(e){}
+}
+async function downloadBackup(){
+  try{
+    const data=await fetchAllData();
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,1)],{type:"application/json"}));
+    a.download=backupFileName(); document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    toast("קובץ הגיבוי ירד לטלפון"); await markFileBackup();
+  }catch(e){ toast("הגיבוי נכשל. בדוק את החיבור"); }
+}
+async function shareBackup(){
+  try{
+    const data=await fetchAllData();
+    const file=new File([JSON.stringify(data,null,1)],backupFileName(),{type:"application/json"});
+    if(!(navigator.canShare&&navigator.canShare({files:[file]}))){ return downloadBackup(); }
+    await navigator.share({files:[file],title:"גיבוי חצי חצי"});
+    await markFileBackup();
+  }catch(e){ if(e&&e.name!=="AbortError") toast("השיתוף נכשל"); }
+}
+function renderBanner(){
+  const b=$("bkBanner"); if(!b) return;
+  const d=FREQ_DAYS[S.prefs.remind];
+  const due = S.user && S.entries.length && d && !S.bannerHidden && daysSince(S.prefs.last_file) >= d;
+  b.hidden=!due;
+  if(due) $("bkBannerText").textContent = S.prefs.last_file
+    ? "עברו "+Math.floor(daysSince(S.prefs.last_file))+" ימים מאז ששמרת גיבוי בטלפון."
+    : "עוד לא שמרת גיבוי של הנתונים בטלפון.";
+}
+
+// restore
+function validBackup(d){ return d && d.app==="hetzi-hetzi" && Array.isArray(d.entries); }
+async function restoreData(d){
+  if(S.bkOk) await makeSnapshot("before-restore");
+  const uid=S.user.id;
+  let r=await sb.from(T_ENT).delete().eq("user_id",uid); if(r.error) throw r.error;
+  if(S.recOk){
+    r=await sb.from(T_REC).delete().eq("user_id",uid); if(r.error) throw r.error;
+    const recs=(d.recurring||[]).map(t=>Object.assign(pick(t,REC_COLS),{user_id:uid}));
+    if(recs.length){ r=await sb.from(T_REC).insert(recs); if(r.error) throw r.error; }
+  }
+  const ents=d.entries.map(e=>{ const x=Object.assign(pick(e,ENT_COLS),{user_id:uid}); if(!S.recOk) delete x.recurring_id; return x; });
+  for(let i=0;i<ents.length;i+=500){ r=await sb.from(T_ENT).insert(ents.slice(i,i+500)); if(r.error) throw r.error; }
+  if(d.settings){
+    if(Array.isArray(d.settings.categories)&&d.settings.categories.length) S.cats=d.settings.categories;
+    S.nameA=d.settings.name_a||S.nameA; S.nameB=d.settings.name_b||S.nameB;
+    await saveSettings();
+  }
+}
+async function confirmAndRestore(d,label){
+  const msg="השחזור יחליף את כל הנתונים הנוכחיים ("+S.entries.length+" רישומים) ב־"+d.entries.length+" רישומים מהגיבוי של "+label+"."
+    +(S.bkOk?"\nלפני כן יישמר גיבוי של המצב הנוכחי, כך שאפשר לחזור אחורה.":"")+"\n\nלהמשיך?";
+  if(!confirm(msg)) return;
+  toast("משחזר…");
+  try{ await restoreData(d); closeSheets(); toast("השחזור הושלם"); S.rec=[]; await loadAll(); }
+  catch(e){ toast("השחזור נכשל. נסה שוב"); try{ await loadAll(); }catch(_){} }
+}
+
+// sheet
+function openBackup(){
+  $("bkFreq").value=S.prefs.freq; $("bkRemind").value=S.prefs.remind;
+  $("bkLastFile").textContent = S.prefs.last_file ? "גיבוי אחרון לטלפון: "+fmtDT(S.prefs.last_file) : "עוד לא נשמר גיבוי בטלפון.";
+  $("bkShare").hidden=!navigator.share;
+  $("bkCloudOff").hidden=S.bkOk; $("bkCloud").hidden=!S.bkOk;
+  const list=$("bkList"); list.innerHTML="";
+  if(S.bkOk && !S.backups.length){ list.innerHTML='<p class="hint">עוד אין גיבויים בענן.</p>'; }
+  for(const b of S.backups){
+    const row=document.createElement("div"); row.className="bkrow";
+    const t=document.createElement("span"); t.className="bkt";
+    t.innerHTML="<b></b><small></small>";
+    t.querySelector("b").textContent=fmtDT(b.created_at);
+    t.querySelector("small").textContent=(BK_KIND[b.kind]||b.kind)+" · "+b.entry_count+" רישומים";
+    const btn=document.createElement("button"); btn.className="link"; btn.textContent="שחזור";
+    btn.onclick=async()=>{
+      const {data,error}=await sb.from(T_BK).select("data").eq("id",b.id).single();
+      if(error||!validBackup(data.data)){ toast("לא הצלחתי לטעון את הגיבוי"); return; }
+      confirmAndRestore(data.data,fmtDT(b.created_at));
+    };
+    row.append(t,btn); list.appendChild(row);
+  }
+  closeSheets(); $("bkScrim").classList.add("open");
+}
+async function savePrefs(){ try{ await saveSettings(); }catch(e){ toast("השמירה נכשלה"); } }
+$("btnBackup").onclick=openBackup;
+$("sBackup").onclick=openBackup;
+$("bkClose").onclick=closeSheets;
+$("bkFreq").onchange=async()=>{ S.prefs.freq=$("bkFreq").value; await savePrefs(); if(S.prefs.freq!=="off"){ await autoBackup(); openBackup(); } };
+$("bkRemind").onchange=async()=>{ S.prefs.remind=$("bkRemind").value; S.bannerHidden=false; await savePrefs(); renderBanner(); };
+$("bkNow").onclick=async()=>{ const ok=await makeSnapshot("manual"); toast(ok?"נשמר גיבוי בענן":"הגיבוי נכשל"); openBackup(); };
+$("bkDownload").onclick=downloadBackup;
+$("bkShare").onclick=shareBackup;
+$("bkBannerGo").onclick=()=> navigator.share ? shareBackup() : downloadBackup();
+$("bkBannerLater").onclick=()=>{ S.bannerHidden=true; renderBanner(); };
+$("bkRestoreFile").onclick=()=>{ $("bkFile").value=""; $("bkFile").click(); };
+$("bkFile").onchange=async()=>{
+  const f=$("bkFile").files[0]; if(!f) return;
+  let d; try{ d=JSON.parse(await f.text()); }catch(e){ d=null; }
+  if(!validBackup(d)){ toast("זה לא קובץ גיבוי של חצי חצי"); return; }
+  confirmAndRestore(d, d.created_at?fmtDT(d.created_at):f.name);
+};
 
 /* ---------- entry sheet ---------- */
 let F={};
@@ -878,6 +1032,7 @@ $("iCancel").onclick=closeSheets;
 $("iGo").onclick=async()=>{
   const sel=IMP.filter(r=>r.on); if(!sel.length) return;
   const btn=$("iGo"); btn.disabled=true;
+  try{ await makeSnapshot("before-import"); }catch(e){}
   const t0=Date.now();
   const rows=sel.map((r,i)=>({user_id:S.user.id,type:r.type,payer:r.payer,amount:r.amount,date:r.date,description:r.description||"",category:r.category||"",created_at:new Date(t0+i*1000).toISOString()}));
   const {error}=await sb.from(T_ENT).insert(rows);

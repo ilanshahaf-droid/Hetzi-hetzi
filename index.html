@@ -169,6 +169,15 @@ input[type=text],input[type=date],input[type=email],input[type=password],textare
 .rcard .amt{font-size:18px;font-weight:700}
 .kind{font-weight:700;margin-left:6px}
 .kind.exp{color:var(--exp)} .kind.inc{color:var(--inc)}
+.bkbanner{margin-top:16px;padding:12px 14px;border-radius:14px;background:var(--tr-bg);display:flex;flex-direction:column;gap:10px;font-size:15px}
+.bkbanner div{display:flex;gap:14px;align-items:center}
+.bkbanner .primary{flex:0 0 auto;padding:9px 18px;font-size:15px}
+.bkline{display:flex;gap:10px}
+.bkline .sel{flex:1}
+.bkrow{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+.bkt{display:flex;flex-direction:column}
+.bkt small{color:var(--muted);font-size:13px}
+.ghost.wide{width:100%;margin-top:18px}
 .toast{position:fixed;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:999px;font-size:15px;z-index:20;display:none}
 textarea{min-height:240px;font-size:15px;line-height:1.5}
 
@@ -216,6 +225,10 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     <span class="amount num ltr" id="heroAmt"></span>
     <p class="sub" id="heroSub"></p>
     <button class="settle" id="btnSettle" hidden>רישום התחשבנות</button>
+    <div class="bkbanner" id="bkBanner" hidden>
+      <span id="bkBannerText"></span>
+      <div><button class="primary" id="bkBannerGo">שמירת גיבוי</button><button class="link" id="bkBannerLater">אחר כך</button></div>
+    </div>
     <div class="offline" id="offlineNote" hidden>אין חיבור לאינטרנט. מוצגים הנתונים האחרונים שנטענו; שינויים יתאפשרו כשהחיבור יחזור.</div>
   </section>
 
@@ -263,6 +276,7 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     <button id="btnXlsx">ייצוא לאקסל</button>
     <button id="btnImport">ייבוא מאקסל</button>
     <button id="btnRec">קבועות</button>
+    <button id="btnBackup">גיבוי ושחזור</button>
     <input type="file" id="impFile" accept=".xlsx,.xls,.csv" hidden>
   </div>
 </div>
@@ -337,6 +351,7 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
       <button class="primary" id="sSave">שמירה</button>
       <button class="ghost" id="sCancel">ביטול</button>
     </div>
+    <button class="ghost wide" id="sBackup">גיבוי ושחזור</button>
     <div class="acct"><span id="acctEmail"></span><button class="link" id="btnLogout">התנתקות</button></div>
   </div>
 </div>
@@ -437,6 +452,44 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
       <button class="ghost danger" id="reDel">מחיקה</button>
     </div>
     <button class="link" id="reBack" style="margin-top:12px">חזרה לרשימה</button>
+  </div>
+</div>
+
+<!-- backup sheet -->
+<div class="scrim" id="bkScrim">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="bkTitle">
+    <h3 id="bkTitle">גיבוי ושחזור</h3>
+
+    <h4>גיבוי אוטומטי בענן</h4>
+    <p class="hint" id="bkCloudOff">כדי להפעיל גיבוי אוטומטי צריך להריץ פעם אחת את update-backup.sql ב-Supabase.</p>
+    <div id="bkCloud">
+      <div class="bkline">
+        <select id="bkFreq" class="sel">
+          <option value="daily">כל יום</option><option value="weekly">כל שבוע</option><option value="monthly">כל חודש</option><option value="off">כבוי</option>
+        </select>
+        <button class="ghost" id="bkNow">גבה עכשיו</button>
+      </div>
+      <p class="hint">הגיבוי נוצר אוטומטית כשנכנסים לאפליקציה. נשמרים 12 הגיבויים האחרונים, ובנוסף נוצר גיבוי לפני כל ייבוא ושחזור.</p>
+      <div id="bkList"></div>
+    </div>
+
+    <h4>גיבוי לטלפון</h4>
+    <p class="hint">קובץ שנשמר אצלך, מחוץ ל-Supabase. אפשר לשמור אותו ב-Google Drive דרך "שיתוף".</p>
+    <div class="actions">
+      <button class="primary" id="bkDownload">הורדת קובץ גיבוי</button>
+      <button class="ghost" id="bkShare">שיתוף / Drive</button>
+    </div>
+    <label class="f" for="bkRemind">תזכורת לשמור גיבוי בטלפון</label>
+    <select id="bkRemind" class="sel">
+      <option value="weekly">כל שבוע</option><option value="monthly">כל חודש</option><option value="off">ללא תזכורת</option>
+    </select>
+    <p class="hint" id="bkLastFile"></p>
+
+    <h4>שחזור מקובץ</h4>
+    <button class="ghost wide" id="bkRestoreFile">בחירת קובץ גיבוי…</button>
+    <input type="file" id="bkFile" accept=".json,application/json" hidden>
+
+    <div class="actions"><button class="ghost" id="bkClose" style="flex:1">סגירה</button></div>
   </div>
 </div>
 
