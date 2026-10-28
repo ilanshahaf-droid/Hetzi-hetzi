@@ -10,7 +10,7 @@ const signed = n => (n<0?"−":"+") + money(n);
 const pad = n => String(n).padStart(2,"0");
 const today = () => { const d=new Date(); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); };
 
-const S = { user:null, entries:[], rec:[], recOk:false, bkOk:false, backups:[], prefs:{freq:"weekly",remind:"monthly",last_file:null}, bannerHidden:false, cats:DEFAULT_CATS.slice(), nameA:"אילן", nameB:"קרן", month:today().slice(0,7), who:"all", kind:"all", online:navigator.onLine };
+const S = { user:null, entries:[], rec:[], recOk:false, bkOk:false, backups:[], prefs:{freq:"weekly",remind:"monthly",last_file:null}, bannerHidden:false, cats:DEFAULT_CATS.slice(), nameA:"אילן", nameB:"קרן", month:today().slice(0,7), who:"all", kind:"all", order:(()=>{ try{ return localStorage.getItem("hetzi-order")||"asc"; }catch(e){ return "asc"; } })(), online:navigator.onLine };
 
 /* ---------- Supabase ---------- */
 const cfg = window.HETZI_CONFIG || {};
@@ -224,7 +224,7 @@ function render(){
     $("pInc"+p).textContent=money(sumBy(items,"income",p));
     $("pc"+p).classList.toggle("dim", S.who!=="all" && S.who!==p);
   }
-  setSeg("whoFilter",S.who); setSeg("kindFilter",S.kind);
+  setSeg("whoFilter",S.who); setSeg("kindFilter",S.kind); setSeg("orderFilter",S.order);
   const mBal = items.filter(e=>e.type!=="transfer").reduce((s,e)=>s+effect(e),0);
   const res=$("monthRes"); res.innerHTML=""; res.className="result";
   if(items.some(e=>e.type!=="transfer")){
@@ -249,7 +249,7 @@ function render(){
     box.appendChild(d); return;
   }
   const shown=items.filter(e=>S.who==="all"||e.payer===S.who)
-    .sort((a,b)=>(b.date||"").localeCompare(a.date||"")||String(a.created_at).localeCompare(String(b.created_at)));
+    .sort((a,b)=>((a.date||"").localeCompare(b.date||"")||String(a.created_at).localeCompare(String(b.created_at)))*(S.order==="desc"?-1:1));
   const SECS=[["expense","הוצאות","exp"],["income","הכנסות והחזרים","inc"],["transfer","העברות ביניכם","tr"]];
   for(const [type,title,cls] of SECS){
     if(S.kind!=="all" && S.kind!==type) continue;
@@ -692,6 +692,8 @@ $("prevM").onclick=()=>shiftMonth(-1); $("nextM").onclick=()=>shiftMonth(1);
 function shiftMonth(d){ let [y,m]=S.month.split("-").map(Number); m+=d; if(m<1){m=12;y--;} if(m>12){m=1;y++;} S.month=y+"-"+pad(m); render(); }
 $("whoFilter").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; S.who=b.dataset.v; render(); });
 $("kindFilter").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; S.kind=b.dataset.v; render(); });
+$("orderFilter").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; S.order=b.dataset.v;
+  try{ localStorage.setItem("hetzi-order",S.order); }catch(e){} render(); });
 ["a","b"].forEach(p=>$("pc"+p).addEventListener("click",()=>{ S.who = S.who===p?"all":p; render(); }));
 
 function monthItems(){ return monthEntries().sort((a,b)=>a.date.localeCompare(b.date)||String(a.created_at).localeCompare(String(b.created_at))); }
@@ -854,7 +856,7 @@ function buildAllSheet(wb, months){
   const TL={expense:"הוצאה",income:"הכנסה",transfer:"העברה"};
   const head=ws.getRow(1); head.height=24;
   head.eachCell(c=>{ c.font={name:X.font,bold:true,color:{argb:"FFFFFFFF"}}; c.fill=fill(X.navy); c.alignment={horizontal:"center",vertical:"middle"}; });
-  S.entries.filter(e=>months.includes(e.date.slice(0,7))).sort((a,b)=>a.date.localeCompare(b.date)).forEach((e,i)=>{
+  S.entries.filter(e=>months.includes(e.date.slice(0,7))).sort((a,b)=>a.date.localeCompare(b.date)||String(a.created_at).localeCompare(String(b.created_at))).forEach((e,i)=>{
     const r=ws.addRow([toDate(e.date),TL[e.type],e.type==="transfer"?transferText(e):(e.description||""),e.category||"",nm(e.payer),+e.amount]);
     r.eachCell({includeEmpty:true},c=>{ c.font={name:X.font,size:11}; c.border=border(); if(i%2) c.fill=fill(X.zebra); });
     r.getCell(1).numFmt=X.date; r.getCell(6).numFmt=X.money;
