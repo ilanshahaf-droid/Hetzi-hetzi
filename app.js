@@ -990,33 +990,214 @@ $("btnXlsx").onclick=()=>{
     const l=document.createElement("label"); const c=document.createElement("input");
     c.type="checkbox"; c.value=ym; c.checked=true; l.append(c," "+MONTHS[m-1]+" "+y); box.appendChild(l);
   }
-  $("xErr").textContent=""; $("xScrim").classList.add("open");
+  $("xErr").textContent=""; updXFmt(); $("xScrim").classList.add("open");
 };
 $("xAll").onclick=()=>{ const cs=[...document.querySelectorAll("#xMonths input")]; const on=!cs.every(c=>c.checked); cs.forEach(c=>c.checked=on); };
 $("xCancel").onclick=closeSheets;
-$("xGo").onclick=async()=>{
+/* ---------- PDF / JPEG export (drawn on canvas, so Hebrew always renders correctly) ---------- */
+const loadJsPDF=()=>loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",()=>!!(window.jspdf&&window.jspdf.jsPDF));
+const R = { W:1240, PAGE_H:1754, M:56, FONT:'"Assistant","Segoe UI",Arial,sans-serif',
+  navy:"#1E2940", line:"#D5DBD3", ink:"#1E2940", muted:"#66707F", zebra:"#F7F8F6",
+  exp:"#C46A2A", expL:"#FBEFE4", inc:"#2A8577", incL:"#E2F2EF", tr:"#5B5FA0", trL:"#E9EAF5",
+  a:"#2F6DB5", b:"#A8458A", plus:"#3F7A5A", minus:"#A94F38", sumBg:"#EFF1EC" };
+const fnt=(px,w)=>(w||400)+" "+px+"px "+R.FONT;
+
+// rows: {k:"title"|"head"|"row"|"total"|"label"|"note"|"gap", ...}; cols: [{key,title,num,min}]
+function layoutCols(ctx,cols,rows){
+  const inner=R.W-2*R.M, pad=28;
+  const w=cols.map(c=>{
+    let m=c.min||70;
+    ctx.font=fnt(22,700); m=Math.max(m,ctx.measureText(c.title||"").width+pad);
+    if(!c.flex) rows.forEach(r=>{ if(r.cells&&r.cells[c.key]!=null){ ctx.font=fnt(22,r.k==="row"?400:700); m=Math.max(m,ctx.measureText(String(r.cells[c.key])).width+pad); } });
+    return m;
+  });
+  const fixed=w.reduce((s,x,i)=>s+(cols[i].flex?0:x),0);
+  cols.forEach((c,i)=>{ if(c.flex) w[i]=Math.max(w[i],inner-fixed); });
+  const tot=w.reduce((s,x)=>s+x,0); if(tot>inner){ const f=inner/tot; for(let i=0;i<w.length;i++) w[i]*=f; }
+  // RTL: first column is on the right
+  let x=R.W-R.M; return cols.map((c,i)=>{ const o={x0:x-w[i],x1:x,w:w[i]}; x-=w[i]; return o; });
+}
+const rowH=r=>({title:84,head:52,row:46,total:50,label:50,note:44,gap:r.h||20,foot:40})[r.k];
+function fitText(ctx,t,max){ t=String(t); if(ctx.measureText(t).width<=max) return t; while(t.length>1&&ctx.measureText(t+"…").width>max) t=t.slice(0,-1); return t+"…"; }
+function drawRows(ctx,cols,pos,rows,y){
+  const L=R.M, Rt=R.W-R.M;
+  const cellText=(txt,p,c,font,color)=>{
+    if(txt==null||txt==="") return;
+    ctx.font=font; ctx.fillStyle=color; ctx.textBaseline="middle";
+    const s=fitText(ctx,txt,p.w-20);
+    if(c.num){ ctx.direction="ltr"; ctx.textAlign="center"; ctx.fillText(s,(p.x0+p.x1)/2,y+rowH(cur)/2); }
+    else { ctx.direction="rtl"; ctx.textAlign="right"; ctx.fillText(s,p.x1-12,y+rowH(cur)/2); }
+  };
+  let cur;
+  for(const r of rows){
+    cur=r; const h=rowH(r);
+    if(r.k==="title"){
+      ctx.fillStyle=R.navy; ctx.fillRect(L,y,Rt-L,h);
+      ctx.fillStyle="#fff"; ctx.font=fnt(34,700); ctx.direction="rtl"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(r.text,R.W/2,y+h/2);
+    } else if(r.k==="head"||r.k==="row"||r.k==="total"){
+      ctx.fillStyle=r.k==="head"?r.bg:(r.k==="total"?r.bg:(r.zebra?R.zebra:"#fff")); ctx.fillRect(L,y,Rt-L,h);
+      cols.forEach((c,i)=>{
+        const p=pos[i]; ctx.strokeStyle=R.line; ctx.lineWidth=1; ctx.strokeRect(p.x0+.5,y+.5,p.w,h);
+        const color=r.k==="head"?"#fff":(c.color&&r.cells[c.key]!=null&&c.num?c.color:R.ink);
+        cellText(r.cells[c.key],p,c,fnt(r.k==="head"?23:22,r.k==="row"?400:700),r.colors&&r.colors[c.key]||color);
+      });
+    } else if(r.k==="label"){
+      ctx.fillStyle=r.bg; ctx.fillRect(L,y,Rt-L,h);
+      const vi=cols.findIndex(c=>c.key===r.at), p=pos[vi];
+      ctx.strokeStyle=R.line; ctx.strokeRect(L+.5,y+.5,Rt-L,h);
+      ctx.font=fnt(r.size||23,700); ctx.fillStyle=r.fg||R.ink; ctx.direction="rtl"; ctx.textAlign="right"; ctx.textBaseline="middle";
+      ctx.fillText(r.text,Rt-14,y+h/2);
+      ctx.direction="ltr"; ctx.textAlign="center"; ctx.fillText(r.value,(p.x0+p.x1)/2,y+h/2);
+    } else if(r.k==="note"||r.k==="foot"){
+      ctx.font=fnt(r.k==="foot"?18:(r.size||22),r.bold?700:400); ctx.fillStyle=r.color||R.muted;
+      ctx.direction="rtl"; ctx.textAlign="right"; ctx.textBaseline="middle"; ctx.fillText(r.text,Rt-6,y+h/2);
+    }
+    y+=h;
+  }
+  return y;
+}
+function monthReport(ym,opt){
+  const [y,m]=ym.split("-").map(Number);
+  const items=S.entries.filter(e=>e.date.slice(0,7)===ym).sort((a,b)=>a.date.localeCompare(b.date)||String(a.created_at).localeCompare(String(b.created_at)));
+  const cols=[]; if(opt.date) cols.push({key:"date",title:"תאריך",num:true});
+  cols.push({key:"desc",title:"",flex:true}); if(opt.cat) cols.push({key:"cat",title:"קטגוריה"});
+  cols.push({key:"b",title:S.nameB,num:true,color:R.b,min:150},{key:"a",title:S.nameA,num:true,color:R.a,min:150});
+  const rows=[{k:"title",text:"סיכום תשלומים לחודש "+MONTHS[m-1]+" "+y},{k:"gap",h:18}];
+  const dmy=d=>d.slice(8,10)+"/"+d.slice(5,7)+"/"+d.slice(0,4);
+  const section=(type,title,bg,bgL,tot)=>{
+    const list=items.filter(e=>e.type===type);
+    rows.push({k:"head",bg,cells:{date:"תאריך",desc:title,cat:"קטגוריה",b:S.nameB,a:S.nameA}});
+    list.forEach((e,i)=>rows.push({k:"row",zebra:i%2,cells:{date:dmy(e.date),desc:type==="transfer"?transferText(e):(e.description||""),
+      cat:e.category||"",b:e.payer==="b"?money(e.amount):null,a:e.payer==="a"?money(e.amount):null}}));
+    if(!list.length) rows.push({k:"row",cells:{desc:"אין רישומים"},colors:{desc:R.muted}});
+    rows.push({k:"total",bg:bgL,cells:{desc:tot,b:money(sumBy(list,type,"b")),a:money(sumBy(list,type,"a"))}});
+  };
+  section("expense","סוג הוצאה",R.exp,R.expL,'סה"כ הוצאות');
+  const eB=sumBy(items,"expense","b"), eA=sumBy(items,"expense","a"), iB=sumBy(items,"income","b"), iA=sumBy(items,"income","a");
+  const sgn=v=>(v<0?"-":"")+money(v);
+  rows.push({k:"label",bg:R.expL,text:"חישוב הוצאות",at:"b",value:sgn((eB-eA)/2)},{k:"gap"});
+  section("income","סוג הכנסה / החזר",R.inc,R.incL,'סה"כ הכנסות');
+  rows.push({k:"label",bg:R.incL,text:"חישוב הכנסות",at:"b",value:sgn((iA-iB)/2)});
+  let result=(eB-eA)/2+(iA-iB)/2;
+  const hasTr=items.some(e=>e.type==="transfer");
+  if(hasTr){ rows.push({k:"gap"}); section("transfer","העברות ביניכם",R.tr,R.trL,'סה"כ העברות'); result+=sumBy(items,"transfer","b")-sumBy(items,"transfer","a"); }
+  rows.push({k:"gap"},{k:"label",bg:R.navy,fg:"#fff",size:26,text:"סיכום סופי",at:"b",value:sgn(result)});
+  const ow=owesText(-result);
+  rows.push({k:"note",bold:true,size:24,color:result<0?R.plus:R.minus,text:ow?ow+" "+money(result)+(hasTr?" (אחרי העברות)":""):"החודש מאוזן"});
+  if(opt.notes){
+    const cum=Math.round(-100*S.entries.filter(e=>e.date.slice(0,7)<=ym).reduce((s,e)=>s+effect(e),0))/100, cn=owesText(-cum);
+    rows.push({k:"label",bg:R.sumBg,text:"יתרה מצטברת עד סוף החודש",at:"b",value:sgn(cum)},
+      {k:"note",text:cn?cn+" "+money(cum)+" (כולל חודשים קודמים)":"מאוזנים עד סוף החודש"});
+  }
+  return {cols,rows,name:MONTHS[m-1]+" "+y};
+}
+function allReport(months){
+  const TL={expense:"הוצאה",income:"הכנסה",transfer:"העברה"};
+  const cols=[{key:"date",title:"תאריך",num:true},{key:"type",title:"סוג"},{key:"desc",title:"תיאור",flex:true},{key:"cat",title:"קטגוריה"},{key:"who",title:"מי"},{key:"amt",title:"סכום",num:true,min:150}];
+  const rows=[{k:"title",text:"כל הרישומים"},{k:"gap",h:18},{k:"head",bg:R.navy,cells:Object.fromEntries(cols.map(c=>[c.key,c.title]))}];
+  S.entries.filter(e=>months.includes(e.date.slice(0,7))).sort((a,b)=>a.date.localeCompare(b.date)||String(a.created_at).localeCompare(String(b.created_at)))
+    .forEach((e,i)=>rows.push({k:"row",zebra:i%2,cells:{date:e.date.slice(8,10)+"/"+e.date.slice(5,7)+"/"+e.date.slice(0,4),type:TL[e.type],
+      desc:e.type==="transfer"?transferText(e):(e.description||""),cat:e.category||"",who:nm(e.payer),amt:money(e.amount)},
+      colors:{type:e.type==="expense"?R.exp:e.type==="income"?R.inc:R.tr,who:e.payer==="a"?R.a:R.b}}));
+  return {cols,rows,name:"כל הרישומים"};
+}
+const footRow=()=>({k:"foot",text:"הופק מחצי חצי · "+new Date().toLocaleDateString("he-IL")});
+function newCanvas(h){ const c=document.createElement("canvas"); c.width=R.W; c.height=h; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,R.W,h); return [c,x]; }
+// one tall image
+function renderTall(rep){
+  const [,m]=newCanvas(1); const pos=layoutCols(m,rep.cols,rep.rows);
+  const rows=rep.rows.concat([{k:"gap"},footRow()]);
+  const h=R.M+rows.reduce((s,r)=>s+rowH(r),0)+R.M;
+  const [c,ctx]=newCanvas(h); drawRows(ctx,rep.cols,pos,rows,R.M); return c;
+}
+// A4 pages; a long table continues on the next page with its header repeated
+function renderPages(rep){
+  // a month that is only a bit longer than a page is shrunk to fit on one page instead of spilling a few lines over
+  const tall=renderTall(rep);
+  if(tall.height<=R.PAGE_H) { const [c,ctx]=newCanvas(R.PAGE_H); ctx.drawImage(tall,0,0); return [c]; }
+  if(tall.height<=R.PAGE_H*1.35){
+    const [c,ctx]=newCanvas(R.PAGE_H), k=R.PAGE_H/tall.height, w=R.W*k;
+    ctx.imageSmoothingQuality="high"; ctx.drawImage(tall,(R.W-w)/2,0,w,R.PAGE_H); return [c];
+  }
+  const [,m]=newCanvas(1); const pos=layoutCols(m,rep.cols,rep.rows);
+  const maxY=R.PAGE_H-R.M-rowH({k:"foot"}), pages=[]; let page=[], y=R.M, lastHead=null;
+  const flush=()=>{ const [c,ctx]=newCanvas(R.PAGE_H); drawRows(ctx,rep.cols,pos,page.concat([footRow()]),R.M); pages.push(c); page=[]; y=R.M; };
+  rep.rows.forEach((r,i)=>{
+    if(r.k==="head") lastHead=r;
+    const nextH=r.k==="head"?rowH(r)+rowH({k:"row"}):rowH(r);   // never leave a header alone at the bottom
+    if(y+nextH>maxY && page.length){ flush(); if(r.k!=="head"&&lastHead&&(r.k==="row"||r.k==="total")){ page.push(lastHead); y+=rowH(lastHead); } }
+    if(!(r.k==="gap"&&!page.length)){ page.push(r); y+=rowH(r); }
+  });
+  if(page.length) flush();
+  return pages;
+}
+const canvasBlob=(c,q)=>new Promise(res=>c.toBlob(res,"image/jpeg",q||.92));
+async function buildImageFiles(months,opt){
+  try{ await document.fonts.ready; }catch(e){}
+  const files=[];
+  for(const ym of months){ const rep=monthReport(ym,opt); files.push(new File([await canvasBlob(renderTall(rep))],"הוצאות הילדים - "+rep.name+".jpg",{type:"image/jpeg"})); }
+  return files;
+}
+async function buildPdfFile(months,opt,flat){
+  try{ await document.fonts.ready; }catch(e){}
+  await loadJsPDF();
+  const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4",compress:true}); let first=true;
+  const reps=months.map(ym=>monthReport(ym,opt)); if(flat) reps.push(allReport(months));
+  for(const rep of reps) for(const c of renderPages(rep)){
+    if(!first) doc.addPage(); first=false;
+    doc.addImage(c.toDataURL("image/jpeg",.92),"JPEG",0,0,210,297,undefined,"FAST");
+  }
+  const [y,m]=months[months.length-1].split("-").map(Number);
+  const name=months.length===1?"הוצאות הילדים - "+MONTHS[m-1]+" "+y+".pdf":"הוצאות הילדים.pdf";
+  return new File([doc.output("blob")],name,{type:"application/pdf"});
+}
+function downloadFile(f){
+  const a=document.createElement("a"); a.href=URL.createObjectURL(f); a.download=f.name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+
+const xFmt=()=>(document.querySelector("#xFmt button[aria-pressed=true]")||{dataset:{v:"xlsx"}}).dataset.v;
+function updXFmt(){
+  const f=xFmt(); setSeg("xFmt",f);
+  $("xFlatRow").hidden=f==="jpeg";
+  $("xMonthsHint").textContent=f==="xlsx"?"(כל חודש בגיליון נפרד)":f==="pdf"?"(כל חודש בעמוד נפרד)":"(כל חודש בתמונה נפרדת)";
+  $("xShare").hidden=!(f!=="xlsx" && navigator.share && navigator.canShare);
+  if(f==="pdf") loadJsPDF().catch(()=>{});
+}
+$("xFmt").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; setSeg("xFmt",b.dataset.v); updXFmt(); });
+async function makeExport(){
   const months=[...document.querySelectorAll("#xMonths input:checked")].map(c=>c.value).sort();
-  if(!months.length){ $("xErr").textContent="יש לבחור לפחות חודש אחד."; return; }
+  if(!months.length){ $("xErr").textContent="יש לבחור לפחות חודש אחד."; return null; }
   const opt={date:$("xDate").checked,cat:$("xCat").checked,notes:$("xNotes").checked};
-  const btn=$("xGo"); btn.disabled=true; $("xErr").textContent="";
+  const f=xFmt();
+  if(f==="jpeg") return buildImageFiles(months,opt);
+  if(f==="pdf") return [await buildPdfFile(months,opt,$("xFlat").checked)];
+  await loadExcelJS();
+  const wb=new ExcelJS.Workbook(); wb.creator="חצי חצי";
+  months.forEach(ym=>buildMonthSheet(wb,ym,opt));
+  if($("xFlat").checked) buildAllSheet(wb,months);
+  const idx=Math.max(0,months.indexOf(S.month));
+  wb.views=[{activeTab:idx,firstSheet:0,visibility:"visible"}];
+  const buf=await wb.xlsx.writeBuffer();
+  const [y,m]=months[months.length-1].split("-").map(Number);
+  return [new File([buf],months.length===1?"הוצאות הילדים - "+MONTHS[m-1]+" "+y+".xlsx":"הוצאות הילדים.xlsx",
+    {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})];
+}
+async function runExport(share){
+  const btns=[$("xGo"),$("xShare")]; btns.forEach(b=>b.disabled=true); $("xErr").textContent="";
   try{
-    await loadExcelJS();
-    const wb=new ExcelJS.Workbook(); wb.creator="חצי חצי";
-    months.forEach(ym=>buildMonthSheet(wb,ym,opt));
-    if($("xFlat").checked) buildAllSheet(wb,months);
-    const idx=Math.max(0,months.indexOf(S.month));
-    wb.views=[{activeTab:idx,firstSheet:0,visibility:"visible"}];
-    const buf=await wb.xlsx.writeBuffer();
-    const a=document.createElement("a");
-    a.href=URL.createObjectURL(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
-    const [y,m]=months[months.length-1].split("-").map(Number);
-    a.download= months.length===1 ? "הוצאות הילדים - "+MONTHS[m-1]+" "+y+".xlsx" : "הוצאות הילדים.xlsx";
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-    closeSheets();
+    const files=await makeExport();
+    if(files){
+      if(share && navigator.canShare && navigator.canShare({files})){
+        try{ await navigator.share({files,title:"הוצאות הילדים"}); closeSheets(); }
+        catch(e){ if(e&&e.name==="AbortError"){} else { files.forEach((f,i)=>setTimeout(()=>downloadFile(f),i*400)); closeSheets(); } }
+      } else { files.forEach((f,i)=>setTimeout(()=>downloadFile(f),i*400)); closeSheets(); }
+    }
   }catch(e){ $("xErr").textContent=navigator.onLine?"יצירת הקובץ נכשלה.":"צריך חיבור לאינטרנט ליצירת הקובץ."; }
-  btn.disabled=false;
-};
+  btns.forEach(b=>b.disabled=false);
+}
+$("xGo").onclick=()=>runExport(false);
+$("xShare").onclick=()=>runExport(true);
 
 /* ---------- Excel import ---------- */
 const clean = v => String(v==null?"":v).trim();

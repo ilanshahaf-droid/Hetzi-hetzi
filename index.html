@@ -289,7 +289,7 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
 
   <div class="tools">
     <button id="btnCopy">סיכום לשליחה</button>
-    <button id="btnXlsx">ייצוא לאקסל</button>
+    <button id="btnXlsx">ייצוא קובץ</button>
     <button id="btnImport">ייבוא מאקסל</button>
     <button id="btnRec">קבועות</button>
     <button id="btnBackup">גיבוי ושחזור</button>
@@ -399,7 +399,12 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
 <!-- export sheet -->
 <div class="scrim" id="xScrim">
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="xTitle">
-    <h3 id="xTitle">ייצוא לאקסל</h3>
+    <h3 id="xTitle">ייצוא קובץ</h3>
+    <div class="seg" id="xFmt">
+      <button data-v="xlsx" aria-pressed="true">Excel</button>
+      <button data-v="pdf">PDF</button>
+      <button data-v="jpeg">תמונה (JPEG)</button>
+    </div>
     <h4>עמודות</h4>
     <div class="checks">
       <label><input type="checkbox" id="xDate" checked> תאריך</label>
@@ -407,13 +412,16 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
       <label><input type="checkbox" id="xNotes" checked> יתרה מצטברת ושורות הסבר</label>
     </div>
     <p class="hint">התיאור והסכומים של כל הורה מופיעים תמיד.</p>
-    <h4 class="hrow">חודשים (כל חודש בגיליון נפרד) <button class="link" id="xAll">בחר/נקה הכול</button></h4>
+    <h4 class="hrow"><span>חודשים <small id="xMonthsHint" class="hint"></small></span> <button class="link" id="xAll">בחר/נקה הכול</button></h4>
     <div class="checks" id="xMonths"></div>
-    <h4>נוסף</h4>
-    <div class="checks"><label><input type="checkbox" id="xFlat" checked> גיליון "כל הרישומים" של החודשים שנבחרו</label></div>
+    <div id="xFlatRow">
+      <h4>נוסף</h4>
+      <div class="checks"><label><input type="checkbox" id="xFlat" checked> "כל הרישומים" של החודשים שנבחרו</label></div>
+    </div>
     <div class="err" id="xErr"></div>
     <div class="actions">
-      <button class="primary" id="xGo">ייצוא</button>
+      <button class="primary" id="xGo">הורדה</button>
+      <button class="ghost" id="xShare">שיתוף</button>
       <button class="ghost" id="xCancel">ביטול</button>
     </div>
   </div>
