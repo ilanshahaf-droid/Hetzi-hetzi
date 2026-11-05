@@ -116,6 +116,7 @@ async function loadAll(){
     S.bkBusy=false;
   }
   renderBanner();
+  budgetFlush();
 }
 async function saveSettings(){
   const row={user_id:S.user.id, categories:S.cats, name_a:S.nameA, name_b:S.nameB, updated_at:new Date().toISOString()};
@@ -129,10 +130,12 @@ async function saveEntry(id,data){
     const {data:row,error} = await sb.from(T_ENT).update(data).eq("id",id).select().single();
     if(error) throw error;
     S.entries = S.entries.map(e=>e.id===id?row:e);
+    syncEntries([row],true);
   } else {
     const {data:row,error} = await sb.from(T_ENT).insert(Object.assign({user_id:S.user.id},data)).select().single();
     if(error) throw error;
     S.entries.push(row);
+    syncEntries([row]);
   }
   saveCache(); render();
 }
@@ -140,6 +143,7 @@ async function deleteEntry(id){
   const {error} = await sb.from(T_ENT).delete().eq("id",id);
   if(error) throw error;
   S.entries = S.entries.filter(e=>e.id!==id); saveCache(); render();
+  budgetQueue([budgetItem({id},"delete")]);
 }
 function setOnline(v){ S.online=v; $("offlineNote").hidden=v; }
 window.addEventListener("online",()=>{ if(S.user) loadAll(); });
@@ -173,8 +177,9 @@ async function importSept(btn){
   btn.disabled=true;
   const t0=Date.now();
   const rows = SEPT_2026.map((r,i)=>({user_id:S.user.id,type:r[0],payer:r[1],amount:r[2],description:r[3],category:r[4],date:"2026-09-01",created_at:new Date(t0+i*1000).toISOString()}));
-  const {error} = await sb.from(T_ENT).insert(rows);
+  const {data:ins,error} = await sb.from(T_ENT).insert(rows).select();
   if(error){ btn.disabled=false; toast("הייבוא נכשל. נסה שוב."); return; }
+  syncEntries(ins);
   const missing = [...new Set(SEPT_2026.map(r=>r[4]))].filter(c=>!S.cats.includes(c));
   if(missing.length){ S.cats=S.cats.concat(missing); try{ await saveSettings(); }catch(e){} }
   S.month="2026-09"; toast("ספטמבר יובא"); loadAll();
@@ -313,8 +318,8 @@ async function runRecurring(){
     const {data:claimed,error}=await q.select();
     if(error||!claimed||!claimed.length) continue;
     t.last_generated=last;
-    const ins=await sb.from(T_ENT).insert(rows);
-    if(!ins.error) added+=rows.length;
+    const ins=await sb.from(T_ENT).insert(rows).select();
+    if(!ins.error){ added+=rows.length; syncEntries(ins.data); }
   }
   return added;
 }
@@ -548,6 +553,103 @@ $("bkFile").onchange=async()=>{
   let d; try{ d=JSON.parse(await f.text()); }catch(e){ d=null; }
   if(!validBackup(d)){ toast("זה לא קובץ גיבוי של חצי חצי"); return; }
   confirmAndRestore(d, d.created_at?fmtDT(d.created_at):f.name);
+};
+
+/* ---------- sync to the budget app (מנהל התקציב) ---------- */
+const BUDGET_URL="https://pznpibrlcbjpcoxagxns.supabase.co";
+const BUDGET_KEY="sb_publishable_PdsDUQ0Sy5if_s3p5EKbJA_E_HDfTwN";
+const OUTBOX_LS="hetzi-budget-outbox";
+let sbB=null;
+function budgetClient(){
+  if(!sbB && window.supabase) sbB=window.supabase.createClient(BUDGET_URL,BUDGET_KEY,
+    {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:"hetzi-budget-noauth"}});
+  return sbB;
+}
+const budgetLink=()=> (S.prefs&&S.prefs.budgetLink&&S.prefs.budgetLink.key) || null;
+function outboxRead(){ try{ return JSON.parse(localStorage.getItem(OUTBOX_LS)||"{}")||{}; }catch(e){ return {}; } }
+function outboxWrite(o){ try{ localStorage.setItem(OUTBOX_LS,JSON.stringify(o)); }catch(e){} }
+let bRev=0; const nextRev=()=>{ bRev=Math.max(Date.now(),bRev+1); return bRev; };
+
+function budgetItem(e,op){
+  // only one-time expenses/incomes go to the budget: transfers and recurring entries never do
+  if(op==="delete" || e.type==="transfer" || e.recurring_id) return {hetzi_id:e.id,op:"delete",rev:nextRev(),payload:{}};
+  const full=+e.amount;
+  return {hetzi_id:e.id,op:"upsert",rev:nextRev(),payload:{
+    date:e.date, type:e.type==="expense"?"Expense":"Income",
+    amount:Math.round(full*50)/100, full, payer:nm(e.payer),
+    desc:e.description||(e.type==="expense"?"הוצאה":"הכנסה"), category:e.category||""}};
+}
+// queue first, then send; whatever fails stays queued and is retried later
+function budgetQueue(items){
+  if(!budgetLink() || !items.length) return;
+  const o=outboxRead(); items.forEach(it=>{ o[it.hetzi_id]=it; }); outboxWrite(o);
+  budgetFlush();
+}
+let flushing=false;
+async function budgetFlush(){
+  const key=budgetLink(); if(!key || flushing) return;
+  const o=outboxRead(), items=Object.values(o); if(!items.length) return;
+  const c=budgetClient(); if(!c) return;
+  flushing=true;
+  try{
+    for(let i=0;i<items.length;i+=200){
+      const part=items.slice(i,i+200);
+      const {error}=await c.rpc("hetzi_push",{p_key:key,p_items:part});
+      if(error){ if(/unknown key/.test(error.message||"")) S.budgetKeyBad=true; break; }
+      const cur=outboxRead(); part.forEach(it=>{ if(cur[it.hetzi_id]&&cur[it.hetzi_id].rev===it.rev) delete cur[it.hetzi_id]; }); outboxWrite(cur);
+    }
+  }catch(e){}
+  flushing=false;
+}
+// new rows: recurring ones are skipped. edits: a row that became recurring is removed from the budget
+const syncEntries=(rows,isEdit)=>budgetQueue((rows||[]).filter(e=>isEdit||!e.recurring_id).map(e=>budgetItem(e,"upsert")));
+window.addEventListener("online",()=>budgetFlush());
+
+// settings sheet
+function readSameBrowserLink(){ try{ const v=JSON.parse(localStorage.getItem("hetziBudgetLink")||"null"); return v&&v.key||null; }catch(e){ return null; } }
+function openBudgetSync(){
+  const linked=!!budgetLink();
+  $("bsOff").hidden=linked; $("bsOn").hidden=!linked; $("bsErr").textContent="";
+  if(linked){
+    const since=S.prefs.budgetLink.since;
+    const q=Object.keys(outboxRead()).length;
+    $("bsStatus").textContent="✓ מחובר"+(since?" מ־"+fmtDT(since):"")+". כל הוצאה והכנסה חד־פעמית, עריכה ומחיקה נשלחות לאפליקציית התקציב ב־50% מהסכום. רישומים קבועים והעברות ביניכם לא נשלחים."
+      +(q?" ממתינים לשליחה: "+q+".":"")+(S.budgetKeyBad?" ⚠ המפתח לא מוכר יותר באפליקציית התקציב; חבר מחדש.":"");
+    $("bsMonth").value=S.month;
+  }else{
+    const auto=readSameBrowserLink();
+    $("bsAuto").hidden=!auto; $("bsKey").value="";
+  }
+  closeSheets(); $("bsScrim").classList.add("open");
+}
+async function connectBudget(key){
+  key=(key||"").trim();
+  if(!/^[0-9a-f]{32,}$/i.test(key)){ $("bsErr").textContent="המפתח לא תקין. העתק אותו מאפליקציית התקציב: הגדרות ← חצי חצי."; return; }
+  const c=budgetClient(); if(!c){ $("bsErr").textContent="אין חיבור לאינטרנט."; return; }
+  const {error}=await c.rpc("hetzi_push",{p_key:key,p_items:[]});
+  if(error){ $("bsErr").textContent=/unknown key/.test(error.message||"")?"המפתח לא נמצא. ודא שהעתקת את המפתח העדכני.":"החיבור נכשל: "+error.message; return; }
+  S.prefs.budgetLink={key,since:new Date().toISOString()}; S.budgetKeyBad=false;
+  try{ await saveSettings(); }catch(e){ $("bsErr").textContent="החיבור עבד, אבל שמירת ההגדרה נכשלה. נסה שוב."; return; }
+  toast("מחובר לאפליקציית התקציב"); openBudgetSync();
+}
+$("sBudget").onclick=openBudgetSync;
+$("bsClose").onclick=closeSheets;
+$("bsAuto").onclick=()=>connectBudget(readSameBrowserLink());
+$("bsConnect").onclick=()=>connectBudget($("bsKey").value);
+$("bsSend").onclick=async()=>{
+  const from=$("bsMonth").value; if(!from){ $("bsErr").textContent="בחר חודש."; return; }
+  const rows=S.entries.filter(e=>e.type!=="transfer" && !e.recurring_id && e.date.slice(0,7)>=from);
+  if(!rows.length){ $("bsErr").textContent="אין רישומים מהחודש הזה ואילך."; return; }
+  const [y,m]=from.split("-").map(Number);
+  if(!confirm("לשלוח "+rows.length+" רישומים מ"+MONTHS[m-1]+" "+y+" ואילך? באפליקציית התקציב תוכל לבחור אילו מהם להכניס.")) return;
+  syncEntries(rows); await budgetFlush();
+  toast(Object.keys(outboxRead()).length?"חלק מהרישומים ממתינים לשליחה":"נשלחו "+rows.length+" רישומים"); openBudgetSync();
+};
+$("bsUnlink").onclick=async()=>{
+  if(!confirm("לנתק? רישומים חדשים לא יישלחו לאפליקציית התקציב. מה שכבר נשלח יישאר שם.")) return;
+  delete S.prefs.budgetLink; outboxWrite({});
+  try{ await saveSettings(); }catch(e){}
+  toast("נותק"); openBudgetSync();
 };
 
 /* ---------- entry sheet ---------- */
@@ -1045,8 +1147,9 @@ $("iGo").onclick=async()=>{
   try{ await makeSnapshot("before-import"); }catch(e){}
   const t0=Date.now();
   const rows=sel.map((r,i)=>({user_id:S.user.id,type:r.type,payer:r.payer,amount:r.amount,date:r.date,description:r.description||"",category:r.category||"",created_at:new Date(t0+i*1000).toISOString()}));
-  const {error}=await sb.from(T_ENT).insert(rows);
+  const {data:ins,error}=await sb.from(T_ENT).insert(rows).select();
   if(error){ $("iErr").textContent="הייבוא נכשל. בדוק את החיבור ונסה שוב."; btn.disabled=false; return; }
+  syncEntries(ins);
   const newCats=[...new Set(sel.map(r=>r.category).filter(c=>c&&!S.cats.includes(c)))];
   if(newCats.length){ S.cats=S.cats.concat(newCats); try{ await saveSettings(); }catch(e){} }
   S.month=rows[rows.length-1].date.slice(0,7);

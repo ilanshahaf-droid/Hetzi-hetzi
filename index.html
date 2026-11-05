@@ -359,6 +359,7 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
       <button class="ghost" id="sCancel">ביטול</button>
     </div>
     <button class="ghost wide" id="sBackup">גיבוי ושחזור</button>
+    <button class="ghost wide" id="sBudget" style="margin-top:10px">סנכרון לאפליקציית התקציב</button>
     <div class="acct"><span id="acctEmail"></span><button class="link" id="btnLogout">התנתקות</button></div>
   </div>
 </div>
@@ -497,6 +498,29 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     <input type="file" id="bkFile" accept=".json,.txt,application/json,text/plain" hidden>
 
     <div class="actions"><button class="ghost" id="bkClose" style="flex:1">סגירה</button></div>
+  </div>
+</div>
+
+<!-- budget sync sheet -->
+<div class="scrim" id="bsScrim">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="bsTitle">
+    <h3 id="bsTitle">סנכרון לאפליקציית התקציב</h3>
+    <div id="bsOff">
+      <p class="hint">כל הוצאה והכנסה חד־פעמית (של אילן או של קרן) תישלח לאפליקציית התקציב כתנועה שלך ב־50% מהסכום. עריכה ומחיקה כאן יעדכנו גם שם. רישומים קבועים (↻) והעברות ביניכם לא נשלחים. באפליקציית התקציב תאשר כל תנועה ותבחר לה קטגוריה.</p>
+      <button class="primary wide" id="bsAuto" style="width:100%;margin-top:14px">חיבור (נמצא מפתח בדפדפן הזה)</button>
+      <label class="f" for="bsKey">או הדבק את מפתח החיבור מאפליקציית התקציב (הגדרות ← חצי חצי)</label>
+      <input id="bsKey" type="text" dir="ltr" autocomplete="off" spellcheck="false">
+      <div class="actions"><button class="primary" id="bsConnect">חיבור</button></div>
+    </div>
+    <div id="bsOn">
+      <p class="hint" id="bsStatus"></p>
+      <h4>שליחת רישומים קיימים</h4>
+      <p class="hint">רישומים חד־פעמיים שנוצרו לפני החיבור לא נשלחים לבד. אפשר לשלוח אותם מחודש מסוים ואילך.</p>
+      <div class="bkline"><input type="month" id="bsMonth" class="sel"><button class="ghost" id="bsSend">שליחה</button></div>
+      <button class="ghost wide danger" id="bsUnlink">ניתוק</button>
+    </div>
+    <div class="err" id="bsErr"></div>
+    <div class="actions"><button class="ghost" id="bsClose" style="flex:1">סגירה</button></div>
   </div>
 </div>
 
