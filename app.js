@@ -55,6 +55,17 @@ $("aSignup").onclick = async()=>{
   if(error) return authMsg(authErr(error));
   if(!data.session) authMsg("", "נשלח אליך מייל אימות. אחרי לחיצה על הקישור אפשר להיכנס.");
 };
+$("aGoogle").onclick = async()=>{
+  authMsg(); $("aGoogle").disabled=true;
+  const {error} = await sb.auth.signInWithOAuth({provider:"google",
+    options:{redirectTo:redirectTo(), queryParams:{prompt:"select_account"}}});
+  if(error){
+    $("aGoogle").disabled=false;
+    authMsg(/provider is not enabled|Unsupported provider/i.test(error.message||"")
+      ? "התחברות עם Google עדיין לא הופעלה בפרויקט Supabase."
+      : authErr(error));
+  }
+};
 $("aForgot").onclick = async()=>{
   const email=$("aEmail").value.trim();
   if(!email) return authMsg("יש להזין את האימייל ואז ללחוץ שוב.");
@@ -1165,7 +1176,7 @@ if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch
 if(!sb){
   show("auth");
   authMsg(configured ? "לא ניתן לטעון את ספריית Supabase. בדוק את החיבור לאינטרנט." : "חסרים פרטי Supabase בקובץ config.js.");
-  ["aLogin","aSignup","aForgot"].forEach(id=>$(id).disabled=true);
+  ["aLogin","aSignup","aForgot","aGoogle"].forEach(id=>$(id).disabled=true);
   return;
 }
 sb.auth.onAuthStateChange((ev,session)=>{
