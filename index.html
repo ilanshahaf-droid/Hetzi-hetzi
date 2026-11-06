@@ -31,6 +31,8 @@
     --a:#6FA4E3; --a-bg:#1D2A3D; --b:#D987BE; --b-bg:#35212F;
     --exp:#E8A06A; --exp-bg:#352619; --inc:#6CC7B6; --inc-bg:#173430; --tr:#A2A6E0; --tr-bg:#25273D; }
   .tag{background:hsl(var(--h) 35% 24%)!important;color:hsl(var(--h) 60% 80%)!important}
+  .kid,.kidc,.ksc{background:hsl(var(--h) 30% 22%)!important;color:hsl(var(--h) 65% 80%)!important}
+  .kidc[aria-pressed="true"],.ksc.on{background:hsl(var(--h) 55% 45%)!important;color:#fff!important}
 }
 *,*::before,*::after{box-sizing:inherit}
 [hidden]{display:none!important}
@@ -97,6 +99,19 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .item .d{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .item .meta{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);flex-wrap:wrap}
 .tag{background:hsl(var(--h) 60% 92%);color:hsl(var(--h) 45% 32%);padding:1px 9px;border-radius:999px;font-weight:600;font-size:12.5px}
+.kid{--h:0;background:hsl(var(--h) 75% 94%);color:hsl(var(--h) 50% 34%);border:1px solid hsl(var(--h) 55% 82%);padding:0 8px;border-radius:999px;font-weight:700;font-size:12px}
+.kidc{--h:0;border:1px solid hsl(var(--h) 55% 80%)!important;background:hsl(var(--h) 75% 96%)!important;color:hsl(var(--h) 50% 32%)!important;font-weight:700}
+.kidc[aria-pressed="true"]{background:hsl(var(--h) 55% 45%)!important;border-color:hsl(var(--h) 55% 45%)!important;color:#fff!important}
+.kidc.all{--h:220;border-style:dashed!important;background:none!important;color:var(--muted)!important;font-weight:600}
+.kidsum{margin-top:10px;padding:10px 12px;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
+.kidsum .ksl{display:block;font-size:13px;color:var(--muted);font-weight:600;margin-bottom:6px}
+.ksw{display:flex;flex-wrap:wrap;gap:8px}
+.ksc{--h:220;display:flex;align-items:baseline;gap:8px;border:1px solid hsl(var(--h) 55% 82%);background:hsl(var(--h) 75% 96%);color:hsl(var(--h) 50% 30%);border-radius:12px;padding:6px 12px;font-size:15px;font-weight:700}
+.ksc b{font-size:16px}
+.ksc.on{background:hsl(var(--h) 55% 45%);border-color:hsl(var(--h) 55% 45%);color:#fff}
+.ksc.none{--h:220;background:none;border-style:dashed;color:var(--muted)}
+.kidf{flex-wrap:wrap}
+.seg.filter.kidf button[aria-pressed=true]{background:hsl(var(--h,220) 55% 45%);color:#fff}
 .item .amt{font-size:18px;font-weight:700}
 .empty{padding:34px 0;color:var(--muted);text-align:center}
 .empty .settle{margin-top:14px;color:var(--ink)}
@@ -260,6 +275,7 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     </button>
   </div>
   <div class="result" id="monthRes"></div>
+  <div class="kidsum" id="kidSum" hidden></div>
 
   <div class="filterbar">
     <span>מי:</span>
@@ -276,6 +292,10 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
       <button data-v="expense">הוצאות</button>
       <button data-v="income">הכנסות</button>
     </div>
+  </div>
+  <div class="filterbar second" id="kidBar" hidden>
+    <span>ילד:</span>
+    <div class="seg filter kidf" id="kidFilter"></div>
   </div>
   <div class="filterbar second">
     <span>סדר:</span>
@@ -321,6 +341,10 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
       <datalist id="descList"></datalist>
       <label class="f">קטגוריה</label>
       <div class="chips" id="catChips"></div>
+      <div id="kidBlock" hidden>
+        <label class="f">ילד <small class="hint">(אפשר לבחור כמה)</small></label>
+        <div class="chips" id="kidChips"></div>
+      </div>
     </div>
     <label class="f" for="fDate">תאריך</label>
     <input id="fDate" type="date">
@@ -361,6 +385,16 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     <div class="catrow">
       <input id="newCat" type="text" placeholder="קטגוריה חדשה">
       <button id="addCat" aria-label="הוספת קטגוריה" style="color:var(--ink)">+</button>
+    </div>
+    <h4>ילדים</h4>
+    <p class="hint" id="kidSetOff">כדי לסווג הוצאות לפי ילד צריך להריץ פעם אחת את update-kids.sql ב-Supabase.</p>
+    <div id="kidSetOn">
+      <div id="kidEditor"></div>
+      <div class="catrow">
+        <input id="newKid" type="text" placeholder="שם ילד">
+        <button id="addKid" aria-label="הוספת ילד" style="color:var(--ink)">+</button>
+      </div>
+      <button class="ghost wide" id="sKidsAuto" style="margin-top:6px">סיווג רישומים קיימים לפי השם בתיאור</button>
     </div>
     <div class="err" id="sErr"></div>
     <div class="actions">
@@ -414,6 +448,7 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     <div class="checks">
       <label><input type="checkbox" id="xDate" checked> תאריך</label>
       <label><input type="checkbox" id="xCat" checked> קטגוריה</label>
+      <label><input type="checkbox" id="xKid" checked> ילד</label>
       <label><input type="checkbox" id="xNotes" checked> יתרה מצטברת ושורות הסבר</label>
     </div>
     <p class="hint">התיאור והסכומים של כל הורה מופיעים תמיד.</p>
@@ -467,6 +502,10 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     <input id="reDesc" type="text">
     <label class="f" for="reCat">קטגוריה</label>
     <select id="reCat" class="sel"></select>
+    <div id="reKidBlock" hidden>
+      <label class="f">ילד</label>
+      <div class="chips" id="reKids"></div>
+    </div>
     <div class="recgrid">
       <label>יום בחודש<input id="reDay" type="number" min="1" max="31" inputmode="numeric"></label>
       <label>תדירות
