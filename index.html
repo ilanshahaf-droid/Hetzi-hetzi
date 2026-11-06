@@ -369,6 +369,7 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     </div>
     <button class="ghost wide" id="sBackup">גיבוי ושחזור</button>
     <button class="ghost wide" id="sBudget" style="margin-top:10px">סנכרון לאפליקציית התקציב</button>
+    <button class="ghost wide" id="sPassword" style="margin-top:10px">שינוי סיסמה</button>
     <div class="acct"><span id="acctEmail"></span><button class="link" id="btnLogout">התנתקות</button></div>
   </div>
 </div>
@@ -390,9 +391,13 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
 <div class="scrim" id="pwScrim">
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
     <h3 id="pwTitle">סיסמה חדשה</h3>
+    <label class="f" for="pwNew">סיסמה חדשה</label>
     <input id="pwNew" type="password" autocomplete="new-password" dir="ltr" placeholder="לפחות 6 תווים">
+    <label class="f" for="pwNew2">שוב, לאימות</label>
+    <input id="pwNew2" type="password" autocomplete="new-password" dir="ltr">
+    <label class="swl" style="margin-top:12px;font-weight:400"><input type="checkbox" id="pwShow"> הצגת הסיסמה</label>
     <div class="err" id="pwErr"></div>
-    <div class="actions"><button class="primary" id="pwSave">עדכון סיסמה</button></div>
+    <div class="actions"><button class="primary" id="pwSave">עדכון סיסמה</button><button class="ghost" id="pwCancel" hidden>ביטול</button></div>
   </div>
 </div>
 

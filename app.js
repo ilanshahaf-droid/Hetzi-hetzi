@@ -72,11 +72,30 @@ $("aForgot").onclick = async()=>{
   const {error} = await sb.auth.resetPasswordForEmail(email,{redirectTo:redirectTo()});
   if(error) authMsg(authErr(error)); else authMsg("","נשלח אליך מייל עם קישור לאיפוס הסיסמה.");
 };
+function openPassword(fromSettings){
+  $("pwNew").value=""; $("pwNew2").value=""; $("pwShow").checked=false; pwType();
+  $("pwErr").textContent=""; $("pwCancel").hidden=!fromSettings;
+  closeSheets(); $("pwScrim").classList.add("open");
+  setTimeout(()=>$("pwNew").focus(),60);
+}
+function pwType(){ const t=$("pwShow").checked?"text":"password"; $("pwNew").type=t; $("pwNew2").type=t; }
+$("pwShow").onchange=pwType;
+$("pwCancel").onclick=closeSheets;
+$("sPassword").onclick=()=>openPassword(true);
 $("pwSave").onclick = async()=>{
   const p=$("pwNew").value;
-  if(p.length<6){ $("pwErr").textContent="לפחות 6 תווים."; return; }
+  if(p.length<6){ $("pwErr").textContent="הסיסמה צריכה להכיל לפחות 6 תווים."; return; }
+  if(p!==$("pwNew2").value){ $("pwErr").textContent="שתי הסיסמאות לא זהות."; return; }
+  $("pwSave").disabled=true;
   const {error}=await sb.auth.updateUser({password:p});
-  if(error){ $("pwErr").textContent=authErr(error); return; }
+  $("pwSave").disabled=false;
+  if(error){
+    const m=error.message||"";
+    $("pwErr").textContent=/different from the old|same_password/i.test(m)?"זו כבר הסיסמה הנוכחית. בחר סיסמה אחרת."
+      :/reauthenticat/i.test(m)?"מטעמי אבטחה צריך לאפס את הסיסמה דרך המייל: התנתק ולחץ \"שכחתי סיסמה\"."
+      :authErr(error);
+    return;
+  }
   closeSheets(); toast("הסיסמה עודכנה");
 };
 $("btnLogout").onclick = async()=>{ closeSheets(); await sb.auth.signOut(); };
@@ -1361,7 +1380,7 @@ if(!sb){
   return;
 }
 sb.auth.onAuthStateChange((ev,session)=>{
-  if(ev==="PASSWORD_RECOVERY"){ $("pwErr").textContent=""; $("pwScrim").classList.add("open"); }
+  if(ev==="PASSWORD_RECOVERY") openPassword(false);
   setUser(session ? session.user : null);
 });
 sb.auth.getSession().then(({data})=>setUser(data.session?data.session.user:null)).catch(()=>show("auth"));
