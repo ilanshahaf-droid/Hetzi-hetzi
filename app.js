@@ -780,10 +780,27 @@ $("fSave").onclick=async()=>{
   try{
     if(makeRec){ const t=await createRecurring(data,+$("fRecInt").value,$("fRecEnd").value); data.recurring_id=t.id; }
     await saveEntry(F.id,data); S.month=date.slice(0,7); closeSheets();
-    toast(makeRec?"נשמר כקבוע":(F.id?"הרישום עודכן":"הרישום נשמר")); render(); }
+    const recUpd = F.id && F.recId ? await offerRecurringUpdate(F.recId,data) : false;
+    toast(makeRec?"נשמר כקבוע":recUpd?"הרישום והקבועה עודכנו":(F.id?"הרישום עודכן":"הרישום נשמר")); render(); }
   catch(e){ $("fErr").textContent = navigator.onLine ? "השמירה נכשלה. נסה שוב." : "אין חיבור לאינטרנט. השמירה תתאפשר כשהחיבור יחזור."; }
   $("fSave").disabled=false;
 };
+// editing one entry of a recurring item: offer to apply the change to the recurring item itself, from the next time on
+async function offerRecurringUpdate(recId,d){
+  const t=S.rec.find(x=>x.id===recId); if(!t || d.type!==t.type) return false;
+  const upd={};
+  if(Math.abs(+t.amount-d.amount)>0.004) upd.amount=d.amount;
+  if((t.description||"")!==(d.description||"")) upd.description=d.description;
+  if((t.category||"")!==(d.category||"")) upd.category=d.category;
+  if(t.payer!==d.payer) upd.payer=d.payer;
+  if(!Object.keys(upd).length) return false;
+  const now=[t.description||(t.type==="expense"?"הוצאה":"הכנסה"),money(t.amount),nm(t.payer)].join(" · ");
+  const next=[d.description||(d.type==="expense"?"הוצאה":"הכנסה"),money(d.amount),nm(d.payer)].join(" · ");
+  if(!confirm("זה רישום של קבועה.\nלעדכן גם את הקבועה, כך שמהפעם הבאה יירשם:\n"+next+"\n(במקום: "+now+")\n\nביטול = השינוי חל רק על הרישום הזה.")) return false;
+  const {error}=await sb.from(T_REC).update(upd).eq("id",t.id);
+  if(error){ toast("עדכון הקבועה נכשל"); return false; }
+  Object.assign(t,upd); budgetPushRecs(true); return true;
+}
 $("fDel").onclick=async()=>{
   if(!confirm("למחוק את הרישום?")) return;
   try{ await deleteEntry(F.id); closeSheets(); toast("הרישום נמחק"); }catch(e){ $("fErr").textContent="המחיקה נכשלה. נסה שוב."; }
