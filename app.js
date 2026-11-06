@@ -294,10 +294,6 @@ function render(){
   if(!S.entries.length){ $("heroWho").textContent="עוד אין רישומים"; $("heroAmt").textContent=money(0); }
   else if(!ow){ $("heroWho").textContent="אתם מאוזנים"; $("heroAmt").textContent=money(0); }
   else { hero.classList.add(bal>0?"plus":"minus"); $("heroWho").textContent=ow; $("heroAmt").textContent=money(bal); }
-  // who pays whom: payer → receiver (right to left)
-  const av=p=>'<span class="av '+p+'">'+esc(nm(p).slice(0,1))+'</span>';
-  const arrow='<span class="ar"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 12H5m6-6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
-  $("heroFlow").innerHTML = !ow ? av("a")+'<span class="eq">=</span>'+av("b") : (bal>0 ? av("b")+arrow+av("a") : av("a")+arrow+av("b"));
 
   // month
   const [y,m]=S.month.split("-").map(Number);
@@ -311,18 +307,6 @@ function render(){
   }
   setSeg("whoFilter",S.who); setSeg("kindFilter",S.kind); setSeg("orderFilter",S.order);
   renderKidUI(items);
-  const mBal = items.filter(e=>e.type!=="transfer").reduce((s,e)=>s+effect(e),0);
-  const res=$("monthRes"); res.innerHTML=""; res.className="result";
-  if(items.some(e=>e.type!=="transfer")){
-    const mOw=owesText(mBal);
-    const l=document.createElement("span"); l.className="rl"; l.textContent="סיכום החודש";
-    const t=document.createElement("span"); t.className="rt";
-    if(!mOw) t.textContent="מאוזן";
-    else { res.classList.add(mBal>0?"plus":"minus"); t.append(mOw+" "); const s=document.createElement("b"); s.className="ltr num"; s.textContent=money(mBal); t.append(s); }
-    res.append(l,t);
-  } else res.hidden=true;
-  if(items.some(e=>e.type!=="transfer")) res.hidden=false;
-
   // lists
   const box=$("lists"); box.innerHTML="";
   if(!items.length){
@@ -369,30 +353,11 @@ function render(){
   }
 }
 
-// per-child totals for the month (an expense shared by several children is split evenly) + child filter
+// child filter row
 function renderKidUI(items){
   const on=S.kidsOk && S.kids.length>0;
-  $("kidBar").hidden=!on; $("kidSum").hidden=!on;
+  $("kidBar").hidden=!on;
   if(!on) return;
-  const exp=items.filter(e=>e.type==="expense");
-  const per=Object.fromEntries(S.kids.map(k=>[k,0])); let none=0;
-  exp.forEach(e=>{ const ks=kidsOf(e); if(!ks.length){ none+=+e.amount; return; } ks.forEach(k=>{ per[k]=(per[k]||0)+(+e.amount)/ks.length; }); });
-  const sum=$("kidSum"); sum.innerHTML="";
-  if(exp.length){
-    const t=document.createElement("span"); t.className="ksl"; t.textContent="הוצאות לפי ילד"; sum.appendChild(t);
-    const wrap=document.createElement("div"); wrap.className="ksw";
-    Object.keys(per).forEach(k=>{
-      const b=document.createElement("button"); b.type="button"; b.className="ksc"+(S.kid===k?" on":""); b.style.setProperty("--h",kidHue(k));
-      b.innerHTML='<span></span><b class="ltr num"></b>'; b.firstChild.textContent=k; b.lastChild.textContent=money(per[k]);
-      b.onclick=()=>{ S.kid=S.kid===k?"all":k; render(); }; wrap.appendChild(b);
-    });
-    if(none>0.004){
-      const b=document.createElement("button"); b.type="button"; b.className="ksc none"+(S.kid==="none"?" on":"");
-      b.innerHTML='<span>לא סווג</span><b class="ltr num"></b>'; b.lastChild.textContent=money(none);
-      b.onclick=()=>{ S.kid=S.kid==="none"?"all":"none"; render(); }; wrap.appendChild(b);
-    }
-    sum.appendChild(wrap);
-  } else sum.hidden=true;
   const f=$("kidFilter"); f.innerHTML="";
   const opts=[["all","הכול"]].concat(S.kids.map(k=>[k,k]));
   if(items.some(e=>e.type!=="transfer"&&!kidsOf(e).length)||S.kid==="none") opts.push(["none","ללא"]);
