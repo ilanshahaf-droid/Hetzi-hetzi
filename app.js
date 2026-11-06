@@ -147,6 +147,7 @@ async function loadAll(){
   }
   renderBanner();
   budgetFlush();
+  budgetPushRecs();
 }
 async function saveSettings(){
   const row={user_id:S.user.id, categories:S.cats, name_a:S.nameA, name_b:S.nameB, updated_at:new Date().toISOString()};
@@ -399,7 +400,7 @@ $("reSave").onclick=async()=>{
   const upd={amount:Math.round(amount*100)/100,payer:RT.payer,description:$("reDesc").value.trim(),category:$("reCat").value,day,interval_months:+$("reInt").value,end_month:end};
   const {error}=await sb.from(T_REC).update(upd).eq("id",RT.id);
   if(error){ $("reErr").textContent="השמירה נכשלה. נסה שוב."; return; }
-  Object.assign(S.rec.find(x=>x.id===RT.id),upd);
+  Object.assign(S.rec.find(x=>x.id===RT.id),upd); budgetPushRecs(true);
   toast("נשמר. השינוי חל מהרישום הבא"); openRecList();
 };
 $("rePause").onclick=async()=>{
@@ -408,7 +409,7 @@ $("rePause").onclick=async()=>{
   if(active){ const cur=today().slice(0,7); let ym=nextOccurrence(t); if(ym){ ym=ym.slice(0,7); let last=t.last_generated; while(ym<cur){ last=ym; ym=addMonths(ym,t.interval_months); } upd.last_generated=last; } }
   const {error}=await sb.from(T_REC).update(upd).eq("id",t.id);
   if(error){ $("reErr").textContent="הפעולה נכשלה. נסה שוב."; return; }
-  Object.assign(t,upd); toast(active?"חודשה":"הושהתה");
+  Object.assign(t,upd); budgetPushRecs(true); toast(active?"חודשה":"הושהתה");
   if(active){ const n=await runRecurring(); if(n) await loadAll(); }
   openRecList();
 };
@@ -416,7 +417,7 @@ $("reDel").onclick=async()=>{
   if(!confirm("למחוק את הקבועה? רישומים שכבר נוצרו יישארו, ולא ייווצרו חדשים.")) return;
   const {error}=await sb.from(T_REC).delete().eq("id",RT.id);
   if(error){ $("reErr").textContent="המחיקה נכשלה. נסה שוב."; return; }
-  S.rec=S.rec.filter(x=>x.id!==RT.id); toast("הקבועה נמחקה"); openRecList(); render();
+  S.rec=S.rec.filter(x=>x.id!==RT.id); budgetPushRecs(true); toast("הקבועה נמחקה"); openRecList(); render();
 };
 $("reBack").onclick=openRecList;
 $("rClose").onclick=closeSheets;
@@ -429,7 +430,7 @@ async function createRecurring(entry,interval,end){
     day:+entry.date.slice(8,10),interval_months:interval,start_month:ym,end_month:end||null,last_generated:ym,active:true};
   const {data,error}=await sb.from(T_REC).insert(t).select().single();
   if(error) throw error;
-  S.rec.push(data); return data;
+  S.rec.push(data); budgetPushRecs(true); return data;
 }
 
 /* ---------- backup ---------- */
@@ -632,6 +633,22 @@ async function budgetFlush(){
   flushing=false;
 }
 // new rows: recurring ones are skipped. edits: a row that became recurring is removed from the budget
+// the full list of recurring items goes to the budget app, where they can be linked to its own recurring rules
+const REC_SENT_LS="hetzi-budget-recs-sent";
+async function budgetPushRecs(force){
+  const key=budgetLink(); if(!key || !S.recOk) return;
+  const c=budgetClient(); if(!c) return;
+  try{
+    const {data,error}=await sb.from(T_REC).select("*"); if(error) return;          // fresh, not this device's copy
+    const recs=data.map(t=>({id:t.id,type:t.type,payer:t.payer,amount:+t.amount,description:t.description||"",category:t.category||"",
+      day:t.day,interval_months:t.interval_months,start_month:t.start_month,end_month:t.end_month||null,last_generated:t.last_generated||null,active:!!t.active}))
+      .sort((x,y)=>String(x.id).localeCompare(String(y.id)));
+    const sig=JSON.stringify(recs); let last=null; try{ last=JSON.parse(localStorage.getItem(REC_SENT_LS)||"null"); }catch(e){}
+    if(!force && last && last.sig===sig && Date.now()-last.at<864e5) return;
+    const r=await c.rpc("hetzi_push_recs",{p_key:key,p_recs:recs});
+    if(!r.error) try{ localStorage.setItem(REC_SENT_LS,JSON.stringify({sig,at:Date.now()})); }catch(e){}
+  }catch(e){}
+}
 const syncEntries=(rows,isEdit)=>budgetQueue((rows||[]).filter(e=>isEdit||!e.recurring_id).map(e=>budgetItem(e,"upsert")));
 window.addEventListener("online",()=>budgetFlush());
 
@@ -658,7 +675,7 @@ async function connectBudget(key){
   const c=budgetClient(); if(!c){ $("bsErr").textContent="אין חיבור לאינטרנט."; return; }
   const {error}=await c.rpc("hetzi_push",{p_key:key,p_items:[]});
   if(error){ $("bsErr").textContent=/unknown key/.test(error.message||"")?"המפתח לא נמצא. ודא שהעתקת את המפתח העדכני.":"החיבור נכשל: "+error.message; return; }
-  S.prefs.budgetLink={key,since:new Date().toISOString()}; S.budgetKeyBad=false;
+  S.prefs.budgetLink={key,since:new Date().toISOString()}; S.budgetKeyBad=false; budgetPushRecs(true);
   try{ await saveSettings(); }catch(e){ $("bsErr").textContent="החיבור עבד, אבל שמירת ההגדרה נכשלה. נסה שוב."; return; }
   toast("מחובר לאפליקציית התקציב"); openBudgetSync();
 }
