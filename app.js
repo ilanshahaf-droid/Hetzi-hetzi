@@ -290,9 +290,9 @@ function render(){
   const bal = S.entries.reduce((s,e)=>s+effect(e),0);
   const hero=$("hero"); hero.classList.remove("plus","minus");
   const ow = owesText(bal);
-  if(!S.entries.length){ $("heroWho").textContent="עוד אין רישומים"; $("heroAmt").textContent=money(0); $("heroSub").textContent="כל הוצאה או הכנסה שתירשם תתחלק חצי חצי."; $("btnSettle").hidden=true; }
-  else if(!ow){ $("heroWho").textContent="אתם מאוזנים"; $("heroAmt").textContent=money(0); $("heroSub").textContent="אף אחד לא צריך להעביר כלום כרגע."; $("btnSettle").hidden=true; }
-  else { hero.classList.add(bal>0?"plus":"minus"); $("heroWho").textContent=ow; $("heroAmt").textContent=money(bal); $("heroSub").textContent="יתרה מצטברת על כל הרישומים."; $("btnSettle").hidden=false; }
+  if(!S.entries.length){ $("heroWho").textContent="עוד אין רישומים"; $("heroAmt").textContent=money(0); $("heroSub").textContent="כל הוצאה או הכנסה שתירשם תתחלק חצי חצי."; }
+  else if(!ow){ $("heroWho").textContent="אתם מאוזנים"; $("heroAmt").textContent=money(0); $("heroSub").textContent="אף אחד לא צריך להעביר כלום כרגע."; }
+  else { hero.classList.add(bal>0?"plus":"minus"); $("heroWho").textContent=ow; $("heroAmt").textContent=money(bal); $("heroSub").textContent="יתרה מצטברת על כל הרישומים."; }
 
   // month
   const [y,m]=S.month.split("-").map(Number);
@@ -849,6 +849,11 @@ $("fDesc").addEventListener("change",()=>{
 function closeSheets(){ document.querySelectorAll(".scrim").forEach(s=>s.classList.remove("open")); }
 $("typeSeg").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; F.type=b.dataset.v;
   if(F.type==="income" && !F.cat && S.cats.includes("קצבאות")) F.cat="קצבאות";
+  // a new transfer starts as the full settlement: whole balance, from whoever owes
+  if(F.type==="transfer" && !F.id && !parseAmt($("fAmt").value)){
+    const bal=S.entries.reduce((s,e)=>s+effect(e),0);
+    if(Math.abs(bal)>=0.005){ $("fAmt").value=Math.round(Math.abs(bal)*100)/100; F.payer=bal>0?"b":"a"; }
+  }
   renderCats(); updateForm(); });
 $("whoSeg").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; F.payer=b.dataset.v; updateForm(); });
 $("fAmt").addEventListener("input",updateForm);
@@ -982,10 +987,6 @@ $("sSave").onclick=async()=>{
 
 /* ---------- actions ---------- */
 $("btnAdd").onclick=()=>openEntry(null);
-$("btnSettle").onclick=()=>{
-  const bal=S.entries.reduce((s,e)=>s+effect(e),0);
-  openEntry(null,{type:"transfer",payer: bal>0?"b":"a", amount:Math.round(Math.abs(bal)*100)/100});
-};
 $("prevM").onclick=()=>shiftMonth(-1); $("nextM").onclick=()=>shiftMonth(1);
 function shiftMonth(d){ let [y,m]=S.month.split("-").map(Number); m+=d; if(m<1){m=12;y--;} if(m>12){m=1;y++;} S.month=y+"-"+pad(m); render(); }
 $("whoFilter").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; S.who=b.dataset.v; render(); });
