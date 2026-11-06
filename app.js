@@ -7,6 +7,7 @@ const MONTHS = ["ינואר","פברואר","מרץ","אפריל","מאי","יו
 const nf = new Intl.NumberFormat("he-IL",{minimumFractionDigits:0,maximumFractionDigits:2});
 const money = n => "₪" + nf.format(Math.round(Math.abs(n)*100)/100);           // ₪ תמיד משמאל
 const signed = n => (n<0?"−":"+") + money(n);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const pad = n => String(n).padStart(2,"0");
 const today = () => { const d=new Date(); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); };
 
@@ -290,13 +291,18 @@ function render(){
   const bal = S.entries.reduce((s,e)=>s+effect(e),0);
   const hero=$("hero"); hero.classList.remove("plus","minus");
   const ow = owesText(bal);
-  if(!S.entries.length){ $("heroWho").textContent="עוד אין רישומים"; $("heroAmt").textContent=money(0); $("heroSub").textContent="כל הוצאה או הכנסה שתירשם תתחלק חצי חצי."; }
-  else if(!ow){ $("heroWho").textContent="אתם מאוזנים"; $("heroAmt").textContent=money(0); $("heroSub").textContent="אף אחד לא צריך להעביר כלום כרגע."; }
-  else { hero.classList.add(bal>0?"plus":"minus"); $("heroWho").textContent=ow; $("heroAmt").textContent=money(bal); $("heroSub").textContent="יתרה מצטברת על כל הרישומים."; }
+  if(!S.entries.length){ $("heroWho").textContent="עוד אין רישומים"; $("heroAmt").textContent=money(0); }
+  else if(!ow){ $("heroWho").textContent="אתם מאוזנים"; $("heroAmt").textContent=money(0); }
+  else { hero.classList.add(bal>0?"plus":"minus"); $("heroWho").textContent=ow; $("heroAmt").textContent=money(bal); }
+  // who pays whom: payer → receiver (right to left)
+  const av=p=>'<span class="av '+p+'">'+esc(nm(p).slice(0,1))+'</span>';
+  const arrow='<span class="ar"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 12H5m6-6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+  $("heroFlow").innerHTML = !ow ? av("a")+'<span class="eq">=</span>'+av("b") : (bal>0 ? av("b")+arrow+av("a") : av("a")+arrow+av("b"));
 
   // month
   const [y,m]=S.month.split("-").map(Number);
   $("monthTitle").textContent=MONTHS[m-1]+" "+y;
+  renderKidsView();
   const items=monthEntries();
   for(const p of ["a","b"]){
     $("pExp"+p).textContent=money(sumBy(items,"expense",p));
@@ -393,6 +399,60 @@ function renderKidUI(items){
   if(S.kid!=="all" && !opts.some(o=>o[0]===S.kid)) S.kid="all";
   opts.forEach(([v,l])=>{ const b=document.createElement("button"); b.dataset.v=v; b.textContent=l; b.setAttribute("aria-pressed",S.kid===v?"true":"false");
     if(v!=="all"&&v!=="none") b.style.setProperty("--h",kidHue(v)); f.appendChild(b); });
+}
+
+/* ---------- views (bottom tabs) ---------- */
+S.tab="month";
+function showTab(t){
+  S.tab=t;
+  ["month","kids","files"].forEach(v=>{ $("view"+v[0].toUpperCase()+v.slice(1)).hidden = v!==t; });
+  document.querySelectorAll(".tab[data-tab]").forEach(b=>{ if(b.dataset.tab===t) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current"); });
+  window.scrollTo(0,0);
+}
+document.querySelectorAll(".tab[data-tab]").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
+$("kPrev").onclick=()=>shiftMonth(-1); $("kNext").onclick=()=>shiftMonth(1);
+$("btnBudgetSync").onclick=()=>openBudgetSync();
+
+// one card per child: the month's share, year to date, and the main categories
+function renderKidsView(){
+  const [y,m]=S.month.split("-").map(Number);
+  $("kMonthTitle").textContent=MONTHS[m-1]+" "+y;
+  const box=$("kidCards"); box.innerHTML="";
+  if(!S.kidsOk){ box.innerHTML='<p class="kempty">כדי לראות הוצאות לפי ילד צריך להריץ פעם אחת את update-kids.sql ב-Supabase.</p>'; return; }
+  if(!S.kids.length){ box.innerHTML='<p class="kempty">אין ילדים ברשימה. אפשר להוסיף בהגדרות.</p>'; return; }
+  const exp=S.entries.filter(e=>e.type==="expense");
+  const share=(list)=>{ const per={}; let none=0, cnt={}; const cats={};
+    list.forEach(e=>{ const ks=kidsOf(e); if(!ks.length){ none+=+e.amount; return; }
+      ks.forEach(k=>{ const v=(+e.amount)/ks.length; per[k]=(per[k]||0)+v; cnt[k]=(cnt[k]||0)+1;
+        const c=e.category||"ללא קטגוריה"; cats[k]=cats[k]||{}; cats[k][c]=(cats[k][c]||0)+v; }); });
+    return {per,none,cnt,cats}; };
+  const mon=share(exp.filter(e=>e.date.slice(0,7)===S.month));
+  const yr=share(exp.filter(e=>e.date.slice(0,4)===String(y)&&e.date.slice(0,7)<=S.month));
+  const max=Math.max(1,...S.kids.map(k=>mon.per[k]||0));
+  if(!exp.some(e=>e.date.slice(0,7)===S.month)){ const p=document.createElement("p"); p.className="kempty"; p.textContent="אין הוצאות ב"+MONTHS[m-1]+"."; box.appendChild(p); }
+  S.kids.forEach(k=>{
+    const v=mon.per[k]||0;
+    const c=document.createElement("button"); c.type="button"; c.className="kcard"; c.style.setProperty("--h",kidHue(k));
+    const cats=Object.entries((mon.cats[k])||{}).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    c.innerHTML='<div class="kh"><span class="kn"><span class="kav"></span><span class="knm"></span></span><b class="kt ltr num"></b></div>'
+      +'<div class="km"></div><div class="kbar"><i></i></div><div class="kcats"></div>';
+    c.querySelector(".kav").textContent=k.slice(0,1); c.querySelector(".knm").textContent=k;
+    c.querySelector(".kt").textContent=money(v);
+    c.querySelector(".km").textContent=(mon.cnt[k]||0)+" הוצאות החודש, מתחילת "+y+": "+money(yr.per[k]||0);
+    c.querySelector(".kbar i").style.width=Math.round(100*v/max)+"%";
+    const kc=c.querySelector(".kcats");
+    if(!cats.length) kc.innerHTML='<div class="kcat"><span>אין הוצאות החודש</span></div>';
+    cats.forEach(([n,val])=>{ const d=document.createElement("div"); d.className="kcat"; d.innerHTML='<span></span><b class="ltr num"></b>'; d.firstChild.textContent=n; d.lastChild.textContent=money(val); kc.appendChild(d); });
+    c.onclick=()=>{ S.kid=k; render(); showTab("month"); };
+    box.appendChild(c);
+  });
+  if(mon.none>0.004){
+    const c=document.createElement("button"); c.type="button"; c.className="kcard none";
+    c.innerHTML='<div class="kh"><span class="kn">לא סווג</span><b class="kt ltr num"></b></div><div class="km">הוצאות החודש בלי ילד. אפשר לסווג אותן בעריכת הרישום.</div>';
+    c.querySelector(".kt").textContent=money(mon.none);
+    c.onclick=()=>{ S.kid="none"; render(); showTab("month"); };
+    box.appendChild(c);
+  }
 }
 
 /* ---------- recurring (קבועות) ---------- */

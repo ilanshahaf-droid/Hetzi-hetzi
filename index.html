@@ -37,21 +37,38 @@
 *,*::before,*::after{box-sizing:inherit}
 [hidden]{display:none!important}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:"Assistant","Segoe UI",Arial,sans-serif;font-size:17px;line-height:1.5;-webkit-tap-highlight-color:transparent}
-.wrap{max-width:560px;margin:0 auto;padding:20px 18px 120px}
+.wrap{max-width:560px;margin:0 auto;padding:20px 18px calc(110px + env(safe-area-inset-bottom,0px))}
 button{font:inherit;color:inherit;cursor:pointer}
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .num{font-family:"Frank Ruhl Libre",Georgia,serif;font-variant-numeric:tabular-nums}
 .ltr{direction:ltr;unicode-bidi:isolate;display:inline-block}
 
-.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px}
-.brand{font-weight:700;font-size:18px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:4px 0 20px}
+.brandwrap{display:flex;align-items:center;gap:12px;min-width:0}
+.logo{width:46px;height:46px;border-radius:14px;flex:none;box-shadow:0 3px 10px rgba(30,41,64,.22)}
+.brandtx{display:flex;flex-direction:column;min-width:0}
+.brand{margin:0;font-size:24px;line-height:1.1;font-weight:800;letter-spacing:-.2px}
+.brandsub{font-size:14px;color:var(--muted);font-weight:600;margin-top:2px}
+.setbtn{display:flex;align-items:center;gap:7px;flex:none;background:var(--surface);color:var(--ink);border:1.5px solid var(--line);border-radius:14px;padding:9px 14px 9px 12px;font-weight:700;font-size:15px;box-shadow:0 1px 0 rgba(30,41,64,.04)}
+.setbtn svg{color:var(--accent)}
+.setbtn:active{transform:translateY(1px)}
 .iconbtn{background:none;border:0;padding:8px;border-radius:10px;color:var(--muted);font-size:15px}
 
-.hero{padding:6px 0 26px;border-bottom:1px solid var(--line)}
-.hero .who{font-size:20px;font-weight:600;margin:0}
-.hero .amount{font-size:clamp(56px,17vw,88px);font-weight:700;line-height:1.05;margin:6px 0 14px;display:block}
-.hero.plus .amount{color:var(--plus)} .hero.minus .amount{color:var(--minus)}
-.hero .sub{color:var(--muted);font-size:15px;margin:0 0 16px}
+.hero{position:relative;overflow:hidden;background:#1E2940;color:#fff;border-radius:24px;padding:20px 22px 22px;box-shadow:0 10px 26px rgba(30,41,64,.22)}
+/* the logo's split circle, quietly in the corner */
+.hero::after{content:"";position:absolute;left:-46px;bottom:-58px;width:190px;height:190px;border-radius:50%;
+  background:linear-gradient(90deg,rgba(123,194,155,.16) 50%,rgba(255,255,255,.06) 50%);pointer-events:none}
+.hero .who{position:relative;z-index:1;font-size:19px;font-weight:600;margin:14px 0 0;color:#E4E9F2}
+.hero .amount{position:relative;z-index:1;font-size:clamp(54px,16vw,84px);font-weight:700;line-height:1.05;margin:4px 0 0;display:block;color:#fff;text-align:right}
+.hero.plus .amount{color:#9BE0B9} .hero.minus .amount{color:#F4AE9B}
+.htop{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.hlabel{font-size:14px;font-weight:600;color:#AEB9CE}
+.flow{position:relative;z-index:1;display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 7px}
+.flow .av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:15px;color:#fff}
+.flow .av.a{background:#2F6DB5} .flow .av.b{background:#A8458A}
+.flow .ar{color:#C9D2E3;display:grid;place-items:center}
+.flow .eq{color:#C9D2E3;font-weight:800;padding:0 2px}
+@media (prefers-color-scheme:dark){ .hero{background:#232D45;box-shadow:none;border:1px solid #2E3746} .setbtn svg{color:#9BE0B9} }
 .settle{background:none;border:1.5px solid var(--ink);border-radius:999px;padding:8px 18px;font-weight:600;font-size:15px}
 .offline{font-size:14px;color:var(--minus);margin-top:12px}
 
@@ -118,6 +135,40 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .tools{display:flex;gap:18px;margin:22px 0 4px;flex-wrap:wrap;justify-content:center}
 .tools button,.link{background:none;border:0;padding:4px 0;color:var(--muted);font-size:15px;text-decoration:underline;text-underline-offset:3px}
 
+/* bottom navigation */
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:9;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;
+  max-width:560px;margin:0 auto;background:var(--surface);border-top:1px solid var(--line);
+  padding:6px 6px calc(8px + env(safe-area-inset-bottom,0px));box-shadow:0 -6px 18px rgba(30,41,64,.06)}
+@media (min-width:561px){ .tabbar{border:1px solid var(--line);border-bottom:0;border-radius:18px 18px 0 0} }
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 0 2px;border-radius:12px}
+.tab[aria-current="page"]{color:var(--ink)}
+.tab[aria-current="page"] svg{color:var(--accent)}
+.tab[aria-current="page"]::after{content:"";width:18px;height:3px;border-radius:2px;background:#7BC29B;margin-top:1px}
+.tab.add i{display:grid;place-items:center;width:54px;height:54px;margin-top:-26px;border-radius:18px;background:var(--accent);color:var(--paper);box-shadow:0 8px 18px rgba(30,41,64,.28);border:4px solid var(--paper)}
+.tab.add i svg{width:26px;height:26px}
+.tab.add{color:var(--ink)}
+/* views */
+.vtitle{margin:6px 0 14px;font-size:22px}
+.vhint{margin:-4px 0 14px}
+.acts{display:flex;flex-direction:column;gap:10px}
+.act{display:flex;align-items:center;gap:14px;width:100%;text-align:right;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px 16px}
+.act .ai{flex:none;width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--chip);color:var(--accent)}
+.act .at{display:flex;flex-direction:column;gap:2px;min-width:0}
+.act b{font-size:17px} .act small{color:var(--muted);font-size:14px}
+.act:disabled{opacity:.5}
+.kcard{--h:220;display:block;width:100%;text-align:right;background:var(--surface);border:1px solid var(--line);border-top:5px solid hsl(var(--h) 55% 50%);border-radius:18px;padding:14px 16px;margin-bottom:12px}
+.kcard .kh{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.kcard .kn{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:800}
+.kcard .kav{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;background:hsl(var(--h) 55% 50%)}
+.kcard .kt{font-size:24px;font-weight:700}
+.kcard .km{color:var(--muted);font-size:13.5px;margin-top:4px}
+.kcard .kbar{height:8px;border-radius:99px;background:var(--chip);margin:12px 0 10px;overflow:hidden}
+.kcard .kbar i{display:block;height:100%;border-radius:99px;background:hsl(var(--h) 55% 55%)}
+.kcard .kcats{display:flex;flex-direction:column;gap:5px}
+.kcard .kcat{display:flex;justify-content:space-between;font-size:14.5px}
+.kcard .kcat span{color:var(--muted)}
+.kcard.none{--h:220;border-top-style:dashed}
+.kempty{padding:30px 0;color:var(--muted);text-align:center}
 .fab{position:fixed;bottom:0;left:0;right:0;padding:0 18px calc(18px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center;pointer-events:none}
 .fab button{pointer-events:auto;background:var(--accent);color:var(--paper);border:0;border-radius:999px;padding:15px 34px;font-size:18px;font-weight:700;box-shadow:0 6px 20px rgba(20,30,50,.25)}
 
@@ -240,20 +291,27 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
 <div id="appView" hidden>
 <div class="wrap">
   <header class="top">
-    <span class="brand">הוצאות הילדים</span>
-    <button class="iconbtn" id="btnSettings">הגדרות</button>
+    <div class="brandwrap">
+      <img class="logo" src="icon-192.png" alt="">
+      <div class="brandtx"><h1 class="brand">הוצאות הילדים</h1><span class="brandsub">חצי חצי</span></div>
+    </div>
+    <button class="setbtn" id="btnSettings">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.9 4.6 1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.27.6.86 1 1.51 1.03H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+      <span>הגדרות</span>
+    </button>
   </header>
 
+  <div class="view" id="viewMonth">
   <section class="hero" id="hero" aria-live="polite">
+    <div class="htop"><div class="flow" id="heroFlow" aria-hidden="true"></div><span class="hlabel">יתרה נוכחית</span></div>
     <p class="who" id="heroWho"></p>
     <span class="amount num ltr" id="heroAmt"></span>
-    <p class="sub" id="heroSub"></p>
+  </section>
     <div class="bkbanner" id="bkBanner" hidden>
       <span id="bkBannerText"></span>
       <div><button class="primary" id="bkBannerGo">הורדה לטלפון</button><button class="ghost sm" id="bkBannerShare">שיתוף / Drive</button><button class="link" id="bkBannerLater">אחר כך</button></div>
     </div>
     <div class="offline" id="offlineNote" hidden>אין חיבור לאינטרנט. מוצגים הנתונים האחרונים שנטענו; שינויים יתאפשרו כשהחיבור יחזור.</div>
-  </section>
 
   <div class="monthbar">
     <button id="prevM" aria-label="חודש קודם"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -305,17 +363,37 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
   </div>
 
   <div id="lists"></div>
+  </div>
 
-  <div class="tools">
-    <button id="btnCopy">סיכום לשליחה</button>
-    <button id="btnXlsx">ייצוא קובץ</button>
-    <button id="btnImport">ייבוא מאקסל</button>
-    <button id="btnRec">קבועות</button>
-    <button id="btnBackup">גיבוי ושחזור</button>
+  <div class="view" id="viewKids" hidden>
+    <div class="monthbar">
+      <button id="kPrev" aria-label="חודש קודם"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <h2 id="kMonthTitle"></h2>
+      <button id="kNext" aria-label="חודש הבא"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
+    <p class="hint vhint">הוצאה שמשותפת לכמה ילדים מתחלקת ביניהם שווה בשווה. לחיצה על ילד מציגה את הרישומים שלו.</p>
+    <div id="kidCards"></div>
+  </div>
+
+  <div class="view" id="viewFiles" hidden>
+    <h2 class="vtitle">קבצים ושיתוף</h2>
+    <div class="acts">
+      <button class="act" id="btnXlsx"><span class="ai"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="at"><b>ייצוא קובץ</b><small>אקסל, PDF או תמונה, לחודש אחד או לכמה חודשים</small></span></button>
+      <button class="act" id="btnCopy"><span class="ai"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4zM8 9h8M8 12h5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="at"><b>סיכום לשליחה</b><small>טקסט מסודר של החודש, מוכן לוואטסאפ</small></span></button>
+      <button class="act" id="btnImport"><span class="ai"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 15V4m0 0L8 8m4-4 4 4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="at"><b>ייבוא מאקסל</b><small>מהגיליון הישן או מקובץ שייצאת מכאן</small></span></button>
+      <button class="act" id="btnBackup"><span class="ai"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.6-8A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9zM12 11v5m0 0-2-2m2 2 2-2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="at"><b>גיבוי ושחזור</b><small>גיבוי אוטומטי בענן וקובץ גיבוי לטלפון</small></span></button>
+      <button class="act" id="btnBudgetSync"><span class="ai"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 12h12m0 0-4-4m4 4-4 4M20 5v14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="at"><b>סנכרון לאפליקציית התקציב</b><small>הוצאות חד־פעמיות עוברות לתקציב ב־50%</small></span></button>
+    </div>
     <input type="file" id="impFile" accept=".xlsx,.xls,.csv" hidden>
   </div>
 </div>
-<div class="fab"><button id="btnAdd">רישום חדש +</button></div>
+<nav class="tabbar" aria-label="ניווט">
+  <button class="tab" data-tab="month" aria-current="page"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 7h16M4 7v12h16V7M4 7V5h16v2M8 3v4M16 3v4M8 12h3M8 16h3M14 12h2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span>החודש</span></button>
+  <button class="tab" data-tab="kids"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm9 1a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM3 20c0-3 2.2-5 5-5s5 2 5 5M14 20c0-2.4 1.4-4.2 3.5-4.2S21 17.6 21 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span>ילדים</span></button>
+  <button class="tab add" id="btnAdd" aria-label="רישום חדש"><i><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>רישום</span></button>
+  <button class="tab" id="btnRec"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 9M20 4v5h-5M20 12a8 8 0 0 1-13.7 5.6L4 15M4 20v-5h5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span>קבועות</span></button>
+  <button class="tab" data-tab="files"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span>קבצים</span></button>
+</nav>
 </div>
 
 <!-- entry sheet -->
