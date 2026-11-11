@@ -11,7 +11,45 @@
   "background_color": "#F5F7F4",
   "theme_color": "#1E2940",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "רישום הוצאה",
+      "short_name": "הוצאה",
+      "description": "פתיחה ישירה של מסך רישום הוצאה",
+      "url": "./?new=expense",
+      "icons": [
+        {
+          "src": "shortcut-expense.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "רישום הכנסה",
+      "short_name": "הכנסה",
+      "description": "פתיחה ישירה של מסך רישום הכנסה",
+      "url": "./?new=income",
+      "icons": [
+        {
+          "src": "shortcut-income.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
   ]
 }

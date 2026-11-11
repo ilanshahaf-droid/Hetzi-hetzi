@@ -109,6 +109,14 @@ function setUser(u){
   if(prev===u.id) return;
   $("acctEmail").textContent = u.email || "";
   loadCache(); show("app"); render(); loadAll();
+  openFromShortcut();
+}
+// long-press on the app icon → "רישום הוצאה" / "רישום הכנסה" opens the entry form directly (?new=expense|income)
+function openFromShortcut(){
+  let t=null; try{ t=new URLSearchParams(location.search).get("new"); }catch(e){}
+  if(t!=="expense" && t!=="income") return;
+  try{ history.replaceState(null,"",location.pathname); }catch(e){}
+  setTimeout(()=>openEntry(null,{type:t}),50);
 }
 
 /* ---------- cache (for offline viewing) ---------- */
