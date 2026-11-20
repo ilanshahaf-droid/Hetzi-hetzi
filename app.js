@@ -12,7 +12,7 @@ const pad = n => String(n).padStart(2,"0");
 const today = () => { const d=new Date(); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); };
 
 const DEFAULT_KIDS=["עלמא","יובל","איילה"];
-const S = { user:null, entries:[], rec:[], recOk:false, kids:DEFAULT_KIDS.slice(), kidsOk:false, kid:"all", bkOk:false, backups:[], prefs:{freq:"weekly",remind:"monthly",last_file:null}, bannerHidden:false, cats:DEFAULT_CATS.slice(), nameA:"אילן", nameB:"קרן", month:today().slice(0,7), who:"all", kind:"all", order:(()=>{ try{ return localStorage.getItem("hetzi-order")||"asc"; }catch(e){ return "asc"; } })(), online:navigator.onLine };
+const S = { rcptOk:false, user:null, entries:[], rec:[], recOk:false, kids:DEFAULT_KIDS.slice(), kidsOk:false, kid:"all", bkOk:false, backups:[], prefs:{freq:"weekly",remind:"monthly",last_file:null}, bannerHidden:false, cats:DEFAULT_CATS.slice(), nameA:"אילן", nameB:"קרן", month:today().slice(0,7), who:"all", kind:"all", order:(()=>{ try{ return localStorage.getItem("hetzi-order")||"asc"; }catch(e){ return "asc"; } })(), online:navigator.onLine };
 
 /* ---------- Supabase ---------- */
 const cfg = window.HETZI_CONFIG || {};
@@ -129,8 +129,9 @@ async function loadAll(){
   const [st, en, kp] = await Promise.all([
     sb.from(T_SET).select("*").eq("user_id",S.user.id).maybeSingle(),
     sb.from(T_ENT).select("*").order("date",{ascending:false}).order("created_at",{ascending:false}),
-    sb.from(T_ENT).select("kids").limit(1)
-  ]);
+    sb.from(T_ENT).select("kids").limit(1),
+    sb.from(T_ENT).select("receipts").limit(1)
+  ]).then(r=>{ S.rcptOk=!r[3].error; return r; });
   S.kidsOk = !kp.error;
   if(en.error){ setOnline(false); return; }
   setOnline(true);
@@ -185,8 +186,10 @@ async function saveEntry(id,data){
   saveCache(); render();
 }
 async function deleteEntry(id){
+  const gone=rcptOf(S.entries.find(e=>e.id===id));
   const {error} = await sb.from(T_ENT).delete().eq("id",id);
   if(error) throw error;
+  rcptRemoveFiles(gone.map(r=>r.path));
   S.entries = S.entries.filter(e=>e.id!==id); saveCache(); render();
   budgetQueue([budgetItem({id},"delete")]);
 }
@@ -351,6 +354,7 @@ function render(){
       const meta=r.querySelector(".meta");
       if(e.recurring_id){ const rc=document.createElement("span"); rc.className="rec"; rc.textContent="↻ קבוע"; meta.appendChild(rc); }
       kidsOf(e).forEach(k=>meta.appendChild(kidChip(k)));
+      if(rcptOf(e).length){ const rc=document.createElement("span"); rc.className="clip"; rc.title="יש קבלה מצורפת"; rc.innerHTML=CLIP_SVG+(rcptOf(e).length>1?"<b>"+rcptOf(e).length+"</b>":""); meta.appendChild(rc); }
       if(e.category){ const t=document.createElement("span"); t.className="tag"; t.style.setProperty("--h",catColor(e.category)); t.textContent=e.category; meta.appendChild(t); }
       const dt=document.createElement("span"); dt.className="dt"; dt.textContent=fmtDay(e.date)+"  "+(type==="expense"?"שילם/ה ":type==="income"?"קיבל/ה ":"")+(type==="transfer"?"":nm(e.payer)); meta.appendChild(dt);
       r.querySelector(".amt").textContent=money(e.amount);
@@ -551,7 +555,7 @@ async function createRecurring(entry,interval,end){
 const T_BK = "hetzi_backups", BK_KEEP = 12;
 const FREQ_DAYS = {daily:1, weekly:7, monthly:30, off:0};
 const BK_KIND = {auto:"אוטומטי", manual:"ידני", "before-restore":"לפני שחזור", "before-import":"לפני ייבוא"};
-const ENT_COLS = ["id","type","payer","amount","date","description","category","created_at","recurring_id","kids"];
+const ENT_COLS = ["id","type","payer","amount","date","description","category","created_at","recurring_id","kids","receipts"];
 const REC_COLS = ["kids","id","type","payer","amount","description","category","day","interval_months","start_month","end_month","last_generated","active","created_at"];
 const pick=(o,cols)=>{ const r={}; cols.forEach(c=>{ if(o[c]!==undefined) r[c]=o[c]; }); return r; };
 const daysSince=iso=> iso ? (Date.now()-new Date(iso).getTime())/864e5 : Infinity;
@@ -639,7 +643,7 @@ async function restoreData(d){
     const recs=(d.recurring||[]).map(t=>{ const x=Object.assign(pick(t,REC_COLS),{user_id:uid}); if(!S.kidsOk) delete x.kids; return x; });
     if(recs.length){ r=await sb.from(T_REC).insert(recs); if(r.error) throw r.error; }
   }
-  const ents=d.entries.map(e=>{ const x=Object.assign(pick(e,ENT_COLS),{user_id:uid}); if(!S.recOk) delete x.recurring_id; if(!S.kidsOk) delete x.kids; return x; });
+  const ents=d.entries.map(e=>{ const x=Object.assign(pick(e,ENT_COLS),{user_id:uid}); if(!S.recOk) delete x.recurring_id; if(!S.kidsOk) delete x.kids; if(!S.rcptOk) delete x.receipts; return x; });
   for(let i=0;i<ents.length;i+=500){ r=await sb.from(T_ENT).insert(ents.slice(i,i+500)); if(r.error) throw r.error; }
   if(d.settings){
     if(Array.isArray(d.settings.categories)&&d.settings.categories.length) S.cats=d.settings.categories;
@@ -836,6 +840,7 @@ function updateForm(){
   $("whoB").textContent = F.type==="transfer"? S.nameB+" העבירה" : S.nameB;
   $("descBlock").hidden = F.type==="transfer";
   $("kidBlock").hidden = !S.kidsOk || !S.kids.length;
+  $("rcptBlock").hidden = !S.rcptOk;
   const canRec = F.type!=="transfer" && S.recOk && !F.recId;
   $("recToggle").hidden=!canRec; $("recOpts").hidden=!(canRec && $("fRec").checked);
   $("recNote").hidden=!(F.recId && F.type!=="transfer");
@@ -867,7 +872,8 @@ function openEntry(e, preset){
   F.recId = e && e.recurring_id && S.rec.some(t=>t.id===e.recurring_id) ? e.recurring_id : null;
   $("fRec").checked=false; $("fRecInt").value="1"; $("fRecEnd").value="";
   F.kids = e ? kidsOf(e).slice() : []; F.kidsTouched = !!e;
-  renderFormKids(); renderCats(); updateForm();
+  F.rcpt = e ? rcptOf(e).map(r=>Object.assign({},r)) : []; F.rcptNew=[]; F.rcptDel=[]; F.saved=false; $("rcptMsg").textContent="";
+  renderFormKids(); renderCats(); renderRcpt(); updateForm();
   $("entryScrim").classList.add("open");
   if(!e) setTimeout(()=>$("fAmt").focus(),60);
 }
@@ -879,7 +885,11 @@ $("fDesc").addEventListener("change",()=>{
     if(!F.kidsTouched && kidsOf(prev).length){ F.kids=kidsOf(prev).slice(); renderFormKids(); }
     renderCats(); updateForm(); }
 });
-function closeSheets(){ document.querySelectorAll(".scrim").forEach(s=>s.classList.remove("open")); }
+function closeSheets(){
+  // closing the entry form without saving: drop the files that were uploaded for it
+  if($("entryScrim").classList.contains("open") && F && !F.saved && F.rcptNew && F.rcptNew.length){ rcptRemoveFiles(F.rcptNew); F.rcptNew=[]; }
+  document.querySelectorAll(".scrim").forEach(s=>s.classList.remove("open"));
+}
 $("typeSeg").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; F.type=b.dataset.v;
   if(F.type==="income" && !F.cat && S.cats.includes("קצבאות")) F.cat="קצבאות";
   // a new transfer starts as the full settlement: whole balance, from whoever owes
@@ -900,11 +910,16 @@ $("fSave").onclick=async()=>{
   if(!date){ $("fErr").textContent="יש לבחור תאריך."; return; }
   const data=withKids({type:F.type,payer:F.payer,amount:Math.round(amount*100)/100,date,
     description:F.type==="transfer"?"":$("fDesc").value.trim(),category:F.type==="transfer"?"":F.cat},F.type==="transfer"?[]:F.kids);
+  if(S.rcptOk) data.receipts = F.type==="transfer" ? [] : F.rcpt.map(r=>({path:r.path,name:r.name,type:r.type,size:r.size}));
+  if(F.rcptBusy){ $("fErr").textContent="הקבלה עדיין עולה. רגע אחד."; return; }
   $("fSave").disabled=true;
   const makeRec = !$("recToggle").hidden && $("fRec").checked;
   try{
     if(makeRec){ const t=await createRecurring(data,+$("fRecInt").value,$("fRecEnd").value); data.recurring_id=t.id; }
-    await saveEntry(F.id,data); S.month=date.slice(0,7); closeSheets();
+    await saveEntry(F.id,data); S.month=date.slice(0,7);
+    F.saved=true; if(F.type==="transfer") F.rcptDel=F.rcptDel.concat(F.rcpt.map(r=>r.path));
+    if(F.rcptDel.length) rcptRemoveFiles(F.rcptDel);
+    closeSheets();
     const recUpd = F.id && F.recId ? await offerRecurringUpdate(F.recId,data) : false;
     toast(makeRec?"נשמר כקבוע":recUpd?"הרישום והקבועה עודכנו":(F.id?"הרישום עודכן":"הרישום נשמר")); render(); }
   catch(e){ $("fErr").textContent = navigator.onLine ? "השמירה נכשלה. נסה שוב." : "אין חיבור לאינטרנט. השמירה תתאפשר כשהחיבור יחזור."; }
@@ -928,6 +943,72 @@ async function offerRecurringUpdate(recId,d){
   if(error){ toast("עדכון הקבועה נכשל"); return false; }
   Object.assign(t,upd); budgetPushRecs(true); return true;
 }
+/* ---------- receipts (קבלות) ---------- */
+const RCPT_BUCKET="hetzi-receipts", RCPT_MAX=10*1024*1024;
+const CLIP_SVG='<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M21 11.5 12.6 20a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.8-7.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const rcptOf=e=>Array.isArray(e&&e.receipts)?e.receipts:[];
+function rcptRemoveFiles(paths){ if(paths&&paths.length) sb.storage.from(RCPT_BUCKET).remove(paths).catch(()=>{}); }
+const fmtSize=b=>b>=1048576?(b/1048576).toFixed(1)+" MB":Math.max(1,Math.round(b/1024))+" KB";
+// phone photos are shrunk before upload (long side 1800px, JPEG) so they stay small
+async function shrinkImage(file){
+  if(!/^image\//.test(file.type) || file.type==="image/gif") return file;
+  try{
+    const bmp=await createImageBitmap(file);
+    const k=Math.min(1,1800/Math.max(bmp.width,bmp.height));
+    if(k===1 && file.size<700*1024) return file;
+    const c=document.createElement("canvas"); c.width=Math.round(bmp.width*k); c.height=Math.round(bmp.height*k);
+    c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+    const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.78));
+    if(!blob || blob.size>=file.size) return file;
+    return new File([blob],file.name.replace(/\.[^.]+$/,"")+".jpg",{type:"image/jpeg"});
+  }catch(e){ return file; }
+}
+async function addReceipts(files){
+  files=[...files]; if(!files.length) return;
+  F.rcptBusy=true; $("rcptMsg").textContent="מעלה…"; $("fSave").disabled=true;
+  let fail=0, big=0;
+  for(const orig of files){
+    if(!/^image\//.test(orig.type) && orig.type!=="application/pdf"){ fail++; continue; }
+    const f=await shrinkImage(orig);
+    if(f.size>RCPT_MAX){ big++; continue; }
+    const ext=f.type==="application/pdf"?"pdf":(f.type.split("/")[1]||"jpg").replace("jpeg","jpg");
+    const path=S.user.id+"/"+(($("fDate").value||today()).slice(0,7))+"/"+Date.now().toString(36)+Math.random().toString(36).slice(2,8)+"."+ext;
+    const {error}=await sb.storage.from(RCPT_BUCKET).upload(path,f,{contentType:f.type,upsert:false});
+    if(error){ fail++; continue; }
+    const r={path,name:orig.name||("קבלה."+ext),type:f.type,size:f.size};
+    F.rcpt.push(r); F.rcptNew.push(path);
+  }
+  F.rcptBusy=false; $("fSave").disabled=false; renderRcpt();
+  $("rcptMsg").textContent = big ? "קובץ גדול מ־10MB לא צורף." : fail ? (navigator.onLine?"צירוף הקובץ נכשל. אפשר לצרף תמונה או PDF.":"אין חיבור לאינטרנט.") : "";
+}
+async function openReceipt(r){
+  const w=window.open("","_blank");   // opened right on the tap, so the browser does not block it
+  const {data,error}=await sb.storage.from(RCPT_BUCKET).createSignedUrl(r.path,600);
+  if(error||!data){ if(w) w.close(); toast("לא הצלחתי לפתוח את הקבלה"); return; }
+  if(w) w.location.href=data.signedUrl; else location.href=data.signedUrl;
+}
+function renderRcpt(){
+  const box=$("rcptList"); if(!box) return; box.innerHTML="";
+  F.rcpt.forEach((r,i)=>{
+    const row=document.createElement("div"); row.className="rcpt";
+    const open=document.createElement("button"); open.type="button"; open.className="rname";
+    open.innerHTML='<span class="ri"></span><span class="rt"><b></b><small></small></span>';
+    open.querySelector(".ri").innerHTML = r.type==="application/pdf" ? '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M7 3h7l5 5v13H7zM14 3v5h5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="20" height="20"><rect x="3.5" y="5" width="17" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="9" cy="10" r="1.7" fill="currentColor"/><path d="m5 17 5-4.5 3 2.5 3-2 3 2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>';
+    open.querySelector("b").textContent=r.name; open.querySelector("small").textContent=(r.type==="application/pdf"?"PDF":"תמונה")+", "+fmtSize(r.size||0)+". לחיצה לפתיחה";
+    open.onclick=()=>openReceipt(r);
+    const del=document.createElement("button"); del.type="button"; del.className="rdel"; del.textContent="✕"; del.setAttribute("aria-label","הסרת "+r.name);
+    del.onclick=()=>{
+      F.rcpt.splice(i,1);
+      if(F.rcptNew.includes(r.path)){ F.rcptNew=F.rcptNew.filter(p=>p!==r.path); rcptRemoveFiles([r.path]); } else F.rcptDel.push(r.path);
+      renderRcpt();
+    };
+    row.append(open,del); box.appendChild(row);
+  });
+}
+$("rcptCam").onchange=()=>{ const f=$("rcptCam").files; addReceipts(f); $("rcptCam").value=""; };
+$("rcptFile").onchange=()=>{ const f=$("rcptFile").files; addReceipts(f); $("rcptFile").value=""; };
+
 $("fDel").onclick=async()=>{
   if(!confirm("למחוק את הרישום?")) return;
   try{ await deleteEntry(F.id); closeSheets(); toast("הרישום נמחק"); }catch(e){ $("fErr").textContent="המחיקה נכשלה. נסה שוב."; }
