@@ -967,8 +967,15 @@ async function addReceipts(files){
   files=[...files]; if(!files.length) return;
   F.rcptBusy=true; $("rcptMsg").textContent="מעלה…"; $("fSave").disabled=true;
   let fail=0, big=0;
-  for(const orig of files){
+  for(let orig of files){
     if(!/^image\//.test(orig.type) && orig.type!=="application/pdf"){ fail++; continue; }
+    if(/^image\//.test(orig.type)){
+      $("rcptMsg").textContent="";
+      const c=await cropImage(orig,true);
+      if(c===null) continue;                       // cancelled: this image is not attached
+      if(c instanceof Blob) orig=new File([c],(orig.name||"קבלה").replace(/\.[^.]+$/,"")+".jpg",{type:"image/jpeg"});
+      $("rcptMsg").textContent="מעלה…";
+    }
     const f=await shrinkImage(orig);
     if(f.size>RCPT_MAX){ big++; continue; }
     const ext=f.type==="application/pdf"?"pdf":(f.type.split("/")[1]||"jpg").replace("jpeg","jpg");
@@ -980,6 +987,62 @@ async function addReceipts(files){
   }
   F.rcptBusy=false; $("fSave").disabled=false; renderRcpt();
   $("rcptMsg").textContent = big ? "קובץ גדול מ־10MB לא צורף." : fail ? (navigator.onLine?"צירוף הקובץ נכשל. אפשר לצרף תמונה או PDF.":"אין חיבור לאינטרנט.") : "";
+}
+/* ---------- crop (חיתוך) ---------- */
+const CROP_BASE="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/";
+function loadCropper(){
+  if(!document.getElementById("cropperCss")){ const l=document.createElement("link"); l.id="cropperCss"; l.rel="stylesheet"; l.href=CROP_BASE+"cropper.min.css"; document.head.appendChild(l); }
+  return loadScript(CROP_BASE+"cropper.min.js",()=>!!window.Cropper);
+}
+// shows the image with a crop frame; resolves a cropped JPEG Blob, "skip" (use as is) or null (cancel)
+async function cropImage(file,allowSkip){
+  try{ await loadCropper(); }catch(e){ toast("החיתוך לא זמין בלי אינטרנט"); return allowSkip?"skip":null; }
+  return new Promise(resolve=>{
+    const url=URL.createObjectURL(file), img=$("cropImg"); let cr=null;
+    $("cropSkip").hidden=!allowSkip;
+    const done=v=>{ if(cr) cr.destroy(); URL.revokeObjectURL(url); img.removeAttribute("src"); $("cropScrim").classList.remove("open"); resolve(v); };
+    img.onload=()=>{
+      cr=new Cropper(img,{viewMode:1,autoCropArea:1,dragMode:"move",background:false,guides:true,center:false,
+        movable:true,zoomable:true,rotatable:true,scalable:false,toggleDragModeOnDblclick:false,responsive:true,restore:false});
+    };
+    img.src=url; $("cropScrim").classList.add("open");
+    $("cropRotate").onclick=()=>{ if(cr){ cr.rotate(90); cr.setCropBoxData(cr.getCanvasData()); } };
+    $("cropReset").onclick=()=>{ if(cr) cr.reset(); };
+    $("cropCancel").onclick=()=>done(null);
+    $("cropSkip").onclick=()=>done("skip");
+    $("cropOk").onclick=()=>{
+      if(!cr) return done("skip");
+      const c=cr.getCroppedCanvas({maxWidth:2400,maxHeight:2400,fillColor:"#fff",imageSmoothingQuality:"high"});
+      if(!c) return done("skip");
+      c.toBlob(b=>done(b||"skip"),"image/jpeg",.88);
+    };
+  });
+}
+// crop a receipt that is already attached: the cropped copy replaces it
+async function recropReceipt(r){
+  let blob;
+  try{
+    const {data,error}=await sb.storage.from(RCPT_BUCKET).download(r.path);
+    if(error||!data) throw error; blob=data;
+  }catch(e){ toast("לא הצלחתי לטעון את התמונה"); return; }
+  const c=await cropImage(new File([blob],r.name,{type:r.type||"image/jpeg"}),false);
+  if(!(c instanceof Blob)) return;
+  const i=F.rcpt.indexOf(r); if(i<0) return;
+  F.rcpt.splice(i,1);
+  if(F.rcptNew.includes(r.path)){ F.rcptNew=F.rcptNew.filter(p=>p!==r.path); rcptRemoveFiles([r.path]); } else F.rcptDel.push(r.path);
+  const before=F.rcpt.length;
+  await addCroppedFile(new File([c],(r.name||"קבלה").replace(/\.[^.]+$/,"")+".jpg",{type:"image/jpeg"}));
+  if(F.rcpt.length>before){ const n=F.rcpt.pop(); F.rcpt.splice(i,0,n); renderRcpt(); }
+}
+async function addCroppedFile(file){
+  F.rcptBusy=true; $("rcptMsg").textContent="מעלה…"; $("fSave").disabled=true;
+  const f=await shrinkImage(file);
+  const path=S.user.id+"/"+(($("fDate").value||today()).slice(0,7))+"/"+Date.now().toString(36)+Math.random().toString(36).slice(2,8)+".jpg";
+  const {error}=await sb.storage.from(RCPT_BUCKET).upload(path,f,{contentType:f.type,upsert:false});
+  F.rcptBusy=false; $("fSave").disabled=false;
+  if(error){ $("rcptMsg").textContent="שמירת החיתוך נכשלה."; renderRcpt(); return; }
+  F.rcpt.push({path,name:file.name,type:f.type,size:f.size}); F.rcptNew.push(path);
+  $("rcptMsg").textContent=""; renderRcpt();
 }
 async function openReceipt(r){
   const w=window.open("","_blank");   // opened right on the tap, so the browser does not block it
@@ -1003,7 +1066,13 @@ function renderRcpt(){
       if(F.rcptNew.includes(r.path)){ F.rcptNew=F.rcptNew.filter(p=>p!==r.path); rcptRemoveFiles([r.path]); } else F.rcptDel.push(r.path);
       renderRcpt();
     };
-    row.append(open,del); box.appendChild(row);
+    if(r.type!=="application/pdf"){
+      const cr=document.createElement("button"); cr.type="button"; cr.className="rdel rcrop"; cr.setAttribute("aria-label","חיתוך "+r.name);
+      cr.innerHTML='<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      cr.onclick=()=>recropReceipt(r);
+      row.append(open,cr,del);
+    } else row.append(open,del);
+    box.appendChild(row);
   });
 }
 $("rcptCam").onchange=()=>{ const f=$("rcptCam").files; addReceipts(f); $("rcptCam").value=""; };

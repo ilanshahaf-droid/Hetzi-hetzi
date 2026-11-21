@@ -255,6 +255,31 @@ input[type=text],input[type=date],input[type=email],input[type=password],textare
 .rcpt .rdel{flex:none;width:44px;background:none;border:1px solid var(--line);border-radius:12px;color:var(--minus);font-size:17px}
 .clip{display:inline-flex;align-items:center;gap:2px;color:var(--muted)}
 .clip b{font-size:12px}
+.cropwrap{position:fixed;inset:0;z-index:30;background:#0E1320;color:#fff;display:none;flex-direction:column;padding:calc(12px + env(safe-area-inset-top,0px)) 14px calc(14px + env(safe-area-inset-bottom,0px))}
+.cropwrap.open{display:flex}
+.crophead{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.crophead b{font-size:19px} .crophead span{font-size:14px;color:#AEB9CE}
+.cropbox{flex:1;min-height:0;background:#000;border-radius:14px;overflow:hidden}
+.cropbox img{display:block;max-width:100%}
+.croptools{display:flex;gap:8px;justify-content:center;margin:12px 0 10px}
+.croptools button{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:8px 14px;font-weight:600;font-size:14.5px}
+.cropact{display:flex;gap:10px}
+.cropact .primary{background:#7BC29B;color:#0E1320}
+.cropact .ghost{color:#fff;border-color:rgba(255,255,255,.25)}
+/* crop frame in the app colours, with handles big enough for a finger */
+.cropwrap .cropper-view-box{outline:2px solid #7BC29B!important;outline-color:#7BC29B!important}
+.cropwrap .cropper-line{background-color:#7BC29B!important}
+.cropwrap .cropper-point{background-color:#7BC29B!important;opacity:1!important;width:18px!important;height:18px!important;border-radius:50%;border:2px solid #fff}
+.cropwrap .cropper-point.point-e{right:-9px!important;margin-top:-9px!important}
+.cropwrap .cropper-point.point-w{left:-9px!important;margin-top:-9px!important}
+.cropwrap .cropper-point.point-n{top:-9px!important;margin-left:-9px!important}
+.cropwrap .cropper-point.point-s{bottom:-9px!important;margin-left:-9px!important}
+.cropwrap .cropper-point.point-ne{right:-9px!important;top:-9px!important}
+.cropwrap .cropper-point.point-nw{left:-9px!important;top:-9px!important}
+.cropwrap .cropper-point.point-sw{left:-9px!important;bottom:-9px!important}
+.cropwrap .cropper-point.point-se{right:-9px!important;bottom:-9px!important;opacity:1!important}
+.cropwrap .cropper-point.point-se::before{display:none}
+.rcrop{color:var(--ink)!important}
 .toast{position:fixed;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:999px;font-size:15px;z-index:20;display:none}
 textarea{min-height:240px;font-size:15px;line-height:1.5}
 
@@ -677,6 +702,21 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     </div>
     <div class="err" id="bsErr"></div>
     <div class="actions"><button class="ghost" id="bsClose" style="flex:1">סגירה</button></div>
+  </div>
+</div>
+
+<!-- crop overlay -->
+<div class="cropwrap" id="cropScrim" role="dialog" aria-modal="true" aria-label="חיתוך הקבלה">
+  <div class="crophead"><b>חיתוך הקבלה</b><span>גרור את הפינות כדי לסמן את הגבולות. אפשר להגדיל באצבעות.</span></div>
+  <div class="cropbox"><img id="cropImg" alt=""></div>
+  <div class="croptools">
+    <button type="button" id="cropRotate"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>סיבוב</button>
+    <button type="button" id="cropReset">איפוס</button>
+    <button type="button" id="cropSkip">בלי חיתוך</button>
+  </div>
+  <div class="cropact">
+    <button type="button" class="primary" id="cropOk">חיתוך ושמירה</button>
+    <button type="button" class="ghost" id="cropCancel">ביטול</button>
   </div>
 </div>
 
