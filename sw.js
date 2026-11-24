@@ -1,4 +1,4 @@
-const CACHE = "hetzi-v26";
+const CACHE = "hetzi-v27";
 const SHELL = ["./", "index.html", "app.js", "config.js", "manifest.json", "icon-192.png", "icon-512.png", "shortcut-expense.png", "shortcut-income.png"];
 
 self.addEventListener("install", e => {

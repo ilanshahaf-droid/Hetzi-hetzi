@@ -227,6 +227,11 @@ input[type=text],input[type=date],input[type=email],input[type=password],textare
 .recgrid select,.recgrid input,select.sel{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:11px 10px;width:100%}
 .recnote{margin-top:14px}
 .rec{color:var(--tr);font-weight:600}
+.sole{padding:0 8px;border-radius:999px;font-weight:700;font-size:12px;border:1px dashed currentColor}
+.sole.a{color:var(--a)} .sole.b{color:var(--b)}
+.seg.split button{font-size:14px}
+.seg.split button[data-v=a][aria-pressed=true]{background:var(--a);color:#fff}
+.seg.split button[data-v=b][aria-pressed=true]{background:var(--b);color:#fff}
 .rcard{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;width:100%;padding:12px 4px;border:0;border-bottom:1px solid var(--line);background:none;text-align:right}
 .rcard.paused{opacity:.5}
 .rcard .main{display:flex;flex-direction:column;min-width:0}
@@ -446,6 +451,10 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
       <button data-v="a" id="whoA"></button>
       <button data-v="b" id="whoB"></button>
     </div>
+    <div id="splitBlock" hidden>
+      <label class="f" id="splitLbl">על חשבון מי?</label>
+      <div class="seg split" id="splitSeg"><button data-v="half"></button><button data-v="a"></button><button data-v="b"></button></div>
+    </div>
     <div id="descBlock">
       <label class="f" for="fDesc">על מה</label>
       <input id="fDesc" type="text" list="descList" placeholder="למשל: איילה חוג כדורגל" autocomplete="off">
@@ -622,6 +631,10 @@ textarea{min-height:240px;font-size:15px;line-height:1.5}
     <input id="reDesc" type="text">
     <label class="f" for="reCat">קטגוריה</label>
     <select id="reCat" class="sel"></select>
+    <div id="reSplitBlock" hidden>
+      <label class="f" id="reSplitLbl">על חשבון מי?</label>
+      <div class="seg split" id="reSplit"><button data-v="half"></button><button data-v="a"></button><button data-v="b"></button></div>
+    </div>
     <div id="reKidBlock" hidden>
       <label class="f">ילד</label>
       <div class="chips" id="reKids"></div>

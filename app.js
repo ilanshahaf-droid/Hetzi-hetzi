@@ -130,8 +130,9 @@ async function loadAll(){
     sb.from(T_SET).select("*").eq("user_id",S.user.id).maybeSingle(),
     sb.from(T_ENT).select("*").order("date",{ascending:false}).order("created_at",{ascending:false}),
     sb.from(T_ENT).select("kids").limit(1),
-    sb.from(T_ENT).select("receipts").limit(1)
-  ]).then(r=>{ S.rcptOk=!r[3].error; return r; });
+    sb.from(T_ENT).select("receipts").limit(1),
+    sb.from(T_ENT).select("split").limit(1)
+  ]).then(r=>{ S.rcptOk=!r[3].error; S.splitOk=!r[4].error; return r; });
   S.kidsOk = !kp.error;
   if(en.error){ setOnline(false); return; }
   setOnline(true);
@@ -245,6 +246,7 @@ const KID_HUES=[330,200,38,145,270,12,175];
 const kidHue=k=>{ const i=S.kids.indexOf(k); return KID_HUES[(i<0?S.kids.length:i)%KID_HUES.length]; };
 const kidsText=arr=>(arr.length>1&&S.kids.length>1&&S.kids.every(k=>arr.includes(k)))?"כל הילדים":arr.join(", ");
 const withKids=(o,kids)=>{ if(S.kidsOk) o.kids=(kids||[]).slice(); return o; };
+const withSplit=(o,src)=>{ if(S.splitOk) o.split=soleOf(Object.assign({type:o.type},src)); return o; };
 const sameKids=(x,y)=>JSON.stringify([...(x||[])].sort())===JSON.stringify([...(y||[])].sort());
 function parseKids(v){
   const s=String(v==null?"":v).trim(); if(!s) return [];
@@ -272,10 +274,14 @@ function renderKidPicker(boxId,getSel,setSel,onChange){
 function kidChip(k){ const s=document.createElement("span"); s.className="kid"; s.style.setProperty("--h",kidHue(k)); s.textContent=k; return s; }
 
 /* ---------- math: positive = B owes A ---------- */
+// split: null = 50/50; "a"/"b" = the expense is paid for only by that parent (an income belongs only to that parent)
+const soleOf=e=> e && e.type!=="transfer" && (e.split==="a"||e.split==="b") ? e.split : null;
+const shareA=e=>{ const s=soleOf(e); return s==="a"?1:s==="b"?0:.5; };
+const soleText=(e)=>{ const s=soleOf(e); if(!s) return ""; return e.type==="income" ? "רק של "+nm(s) : "על חשבון "+nm(s); };
 function effect(e){
   const a=+e.amount||0;
-  if(e.type==="expense")  return e.payer==="a"? a/2 : -a/2;
-  if(e.type==="income")   return e.payer==="a"? -a/2 : a/2;
+  if(e.type==="expense")  return (e.payer==="a"?a:0) - a*shareA(e);
+  if(e.type==="income")   return a*shareA(e) - (e.payer==="a"?a:0);
   if(e.type==="transfer") return e.payer==="a"? a : -a;
   return 0;
 }
@@ -354,6 +360,7 @@ function render(){
       const meta=r.querySelector(".meta");
       if(e.recurring_id){ const rc=document.createElement("span"); rc.className="rec"; rc.textContent="↻ קבוע"; meta.appendChild(rc); }
       kidsOf(e).forEach(k=>meta.appendChild(kidChip(k)));
+      if(soleOf(e)){ const so=document.createElement("span"); so.className="sole "+soleOf(e); so.textContent=soleText(e); meta.appendChild(so); }
       if(rcptOf(e).length){ const rc=document.createElement("span"); rc.className="clip"; rc.title="יש קבלה מצורפת"; rc.innerHTML=CLIP_SVG+(rcptOf(e).length>1?"<b>"+rcptOf(e).length+"</b>":""); meta.appendChild(rc); }
       if(e.category){ const t=document.createElement("span"); t.className="tag"; t.style.setProperty("--h",catColor(e.category)); t.textContent=e.category; meta.appendChild(t); }
       const dt=document.createElement("span"); dt.className="dt"; dt.textContent=fmtDay(e.date)+"  "+(type==="expense"?"שילם/ה ":type==="income"?"קיבל/ה ":"")+(type==="transfer"?"":nm(e.payer)); meta.appendChild(dt);
@@ -455,7 +462,7 @@ async function runRecurring(){
     const rows=[]; let ym=t.last_generated?addMonths(t.last_generated,t.interval_months):t.start_month, last=t.last_generated;
     while(ym<=cur && (!t.end_month||ym<=t.end_month)){
       const d=recDate(t,ym); if(d>td) break;
-      rows.push(withKids({user_id:S.user.id,type:t.type,payer:t.payer,amount:t.amount,description:t.description,category:t.category,date:d,recurring_id:t.id},kidsOf(t)));
+      rows.push(withSplit(withKids({user_id:S.user.id,type:t.type,payer:t.payer,amount:t.amount,description:t.description,category:t.category,date:d,recurring_id:t.id},kidsOf(t)),t));
       last=ym; ym=addMonths(ym,t.interval_months);
     }
     if(!rows.length) continue;
@@ -487,6 +494,7 @@ function openRecList(){
     const k=document.createElement("span"); k.className="kind "+(t.type==="expense"?"exp":"inc"); k.textContent=t.type==="expense"?"הוצאה":"הכנסה"; meta.appendChild(k);
     meta.append(recLabel(t)+" ב־"+t.day+" לחודש"+(t.end_month?", עד "+t.end_month.slice(5)+"/"+t.end_month.slice(0,4):"")
       +(t.active? (nx?", הבא: "+fmtDay(nx):", הסתיימה") : ", מושהית"));
+    if(soleOf(t)){ const so=document.createElement("span"); so.className="sole "+soleOf(t); so.textContent=soleText(t); meta.appendChild(so); }
     c.querySelector(".amt").textContent=money(t.amount);
     c.onclick=()=>openRecEdit(t);
     box.appendChild(c);
@@ -504,11 +512,13 @@ function openRecEdit(t){
   list.forEach(c=>{ const o=document.createElement("option"); o.value=c; o.textContent=c; if(c===t.category) o.selected=true; cs.appendChild(o); });
   $("rePA").textContent=S.nameA; $("rePB").textContent=S.nameB; setSeg("rePayer",RT.payer);
   RT.kids=kidsOf(t).slice(); $("reKidBlock").hidden=!S.kidsOk||!S.kids.length;
+  RT.split=soleOf(t)||"half"; renderSplitSeg("reSplit","reSplitLbl",t.type,RT.split); $("reSplitBlock").hidden=!S.splitOk;
   renderKidPicker("reKids",()=>RT.kids,v=>{ RT.kids=v; });
   $("rePause").textContent=t.active?"השהיה":"חידוש";
   $("reErr").textContent="";
   closeSheets(); $("reScrim").classList.add("open");
 }
+$("reSplit").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; RT.split=b.dataset.v; setSeg("reSplit",RT.split); });
 $("rePayer").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; RT.payer=b.dataset.v; setSeg("rePayer",RT.payer); });
 $("reSave").onclick=async()=>{
   const amount=parseAmt($("reAmt").value), day=parseInt($("reDay").value,10);
@@ -516,6 +526,7 @@ $("reSave").onclick=async()=>{
   if(!(day>=1&&day<=31)){ $("reErr").textContent="יום בחודש צריך להיות בין 1 ל־31."; return; }
   const end=$("reEnd").value||null;
   const upd=withKids({amount:Math.round(amount*100)/100,payer:RT.payer,description:$("reDesc").value.trim(),category:$("reCat").value,day,interval_months:+$("reInt").value,end_month:end},RT.kids);
+  if(S.splitOk) upd.split=RT.split==="half"?null:RT.split;
   const {error}=await sb.from(T_REC).update(upd).eq("id",RT.id);
   if(error){ $("reErr").textContent="השמירה נכשלה. נסה שוב."; return; }
   Object.assign(S.rec.find(x=>x.id===RT.id),upd); budgetPushRecs(true);
@@ -546,6 +557,7 @@ async function createRecurring(entry,interval,end){
   const ym=entry.date.slice(0,7);
   const t=withKids({user_id:S.user.id,type:entry.type,payer:entry.payer,amount:entry.amount,description:entry.description,category:entry.category,
     day:+entry.date.slice(8,10),interval_months:interval,start_month:ym,end_month:end||null,last_generated:ym,active:true},kidsOf(entry));
+  withSplit(t,entry);
   const {data,error}=await sb.from(T_REC).insert(t).select().single();
   if(error) throw error;
   S.rec.push(data); budgetPushRecs(true); return data;
@@ -555,8 +567,8 @@ async function createRecurring(entry,interval,end){
 const T_BK = "hetzi_backups", BK_KEEP = 12;
 const FREQ_DAYS = {daily:1, weekly:7, monthly:30, off:0};
 const BK_KIND = {auto:"אוטומטי", manual:"ידני", "before-restore":"לפני שחזור", "before-import":"לפני ייבוא"};
-const ENT_COLS = ["id","type","payer","amount","date","description","category","created_at","recurring_id","kids","receipts"];
-const REC_COLS = ["kids","id","type","payer","amount","description","category","day","interval_months","start_month","end_month","last_generated","active","created_at"];
+const ENT_COLS = ["id","type","payer","amount","date","description","category","created_at","recurring_id","kids","receipts","split"];
+const REC_COLS = ["kids","split","id","type","payer","amount","description","category","day","interval_months","start_month","end_month","last_generated","active","created_at"];
 const pick=(o,cols)=>{ const r={}; cols.forEach(c=>{ if(o[c]!==undefined) r[c]=o[c]; }); return r; };
 const daysSince=iso=> iso ? (Date.now()-new Date(iso).getTime())/864e5 : Infinity;
 const fmtDT=iso=>new Date(iso).toLocaleString("he-IL",{day:"numeric",month:"numeric",year:"2-digit",hour:"2-digit",minute:"2-digit"});
@@ -643,7 +655,7 @@ async function restoreData(d){
     const recs=(d.recurring||[]).map(t=>{ const x=Object.assign(pick(t,REC_COLS),{user_id:uid}); if(!S.kidsOk) delete x.kids; return x; });
     if(recs.length){ r=await sb.from(T_REC).insert(recs); if(r.error) throw r.error; }
   }
-  const ents=d.entries.map(e=>{ const x=Object.assign(pick(e,ENT_COLS),{user_id:uid}); if(!S.recOk) delete x.recurring_id; if(!S.kidsOk) delete x.kids; if(!S.rcptOk) delete x.receipts; return x; });
+  const ents=d.entries.map(e=>{ const x=Object.assign(pick(e,ENT_COLS),{user_id:uid}); if(!S.recOk) delete x.recurring_id; if(!S.kidsOk) delete x.kids; if(!S.rcptOk) delete x.receipts; if(!S.splitOk) delete x.split; return x; });
   for(let i=0;i<ents.length;i+=500){ r=await sb.from(T_ENT).insert(ents.slice(i,i+500)); if(r.error) throw r.error; }
   if(d.settings){
     if(Array.isArray(d.settings.categories)&&d.settings.categories.length) S.cats=d.settings.categories;
@@ -722,10 +734,12 @@ let bRev=0; const nextRev=()=>{ bRev=Math.max(Date.now(),bRev+1); return bRev; }
 function budgetItem(e,op){
   // only one-time expenses/incomes go to the budget: transfers and recurring entries never do
   if(op==="delete" || e.type==="transfer" || e.recurring_id) return {hetzi_id:e.id,op:"delete",rev:nextRev(),payload:{}};
-  const full=+e.amount;
+  const full=+e.amount, share=shareA(e);
+  // a one-parent item that is all Keren's is not part of Ilan's budget
+  if(!share) return {hetzi_id:e.id,op:"delete",rev:nextRev(),payload:{}};
   return {hetzi_id:e.id,op:"upsert",rev:nextRev(),payload:{
     date:e.date, type:e.type==="expense"?"Expense":"Income",
-    amount:Math.round(full*50)/100, full, payer:nm(e.payer),
+    amount:Math.round(full*share*100)/100, full, share, payer:nm(e.payer),
     desc:e.description||(e.type==="expense"?"הוצאה":"הכנסה"), category:e.category||""}};
 }
 // queue first, then send; whatever fails stays queued and is retried later
@@ -758,7 +772,8 @@ async function budgetPushRecs(force){
   const c=budgetClient(); if(!c) return;
   try{
     const {data,error}=await sb.from(T_REC).select("*"); if(error) return;          // fresh, not this device's copy
-    const recs=data.map(t=>({id:t.id,type:t.type,payer:t.payer,amount:+t.amount,description:t.description||"",category:t.category||"",
+    // amount is sent doubled to Ilan's share, so the budget's "half of amount" is right for one-parent items too
+    const recs=data.map(t=>({id:t.id,type:t.type,payer:t.payer,amount:Math.round(+t.amount*shareA(t)*200)/100,full:+t.amount,share:shareA(t),description:t.description||"",category:t.category||"",
       day:t.day,interval_months:t.interval_months,start_month:t.start_month,end_month:t.end_month||null,last_generated:t.last_generated||null,active:!!t.active}))
       .sort((x,y)=>String(x.id).localeCompare(String(y.id)));
     const sig=JSON.stringify(recs); let last=null; try{ last=JSON.parse(localStorage.getItem(REC_SENT_LS)||"null"); }catch(e){}
@@ -778,7 +793,7 @@ function openBudgetSync(){
   if(linked){
     const since=S.prefs.budgetLink.since;
     const q=Object.keys(outboxRead()).length;
-    $("bsStatus").textContent="✓ מחובר"+(since?" מ־"+fmtDT(since):"")+". כל הוצאה והכנסה חד־פעמית, עריכה ומחיקה נשלחות לאפליקציית התקציב ב־50% מהסכום. רישומים קבועים והעברות ביניכם לא נשלחים."
+    $("bsStatus").textContent="✓ מחובר"+(since?" מ־"+fmtDT(since):"")+". כל הוצאה והכנסה חד־פעמית, עריכה ומחיקה נשלחות לאפליקציית התקציב ב־50% מהסכום (ובמימון של הורה אחד: 100% אם על חשבונך, ולא נשלחת אם על חשבון '+S.nameB+').  רישומים קבועים והעברות ביניכם לא נשלחים."
       +(q?" ממתינים לשליחה: "+q+".":"")+(S.budgetKeyBad?" ⚠ המפתח לא מוכר יותר באפליקציית התקציב; חבר מחדש.":"");
     $("bsMonth").value=S.month;
   }else{
@@ -841,6 +856,8 @@ function updateForm(){
   $("descBlock").hidden = F.type==="transfer";
   $("kidBlock").hidden = !S.kidsOk || !S.kids.length;
   $("rcptBlock").hidden = !S.rcptOk;
+  $("splitBlock").hidden = !S.splitOk || F.type==="transfer";
+  renderSplitSeg("splitSeg","splitLbl",F.type,F.split);
   const canRec = F.type!=="transfer" && S.recOk && !F.recId;
   $("recToggle").hidden=!canRec; $("recOpts").hidden=!(canRec && $("fRec").checked);
   $("recNote").hidden=!(F.recId && F.type!=="transfer");
@@ -848,7 +865,8 @@ function updateForm(){
   const dd=$("fDate").value; $("fRecDay").textContent = dd ? +dd.slice(8,10) : "";
   const a=parseAmt($("fAmt").value);
   const p=$("fPreview"); p.innerHTML="";
-  if(a>0){ const ef=effect({type:F.type,payer:F.payer,amount:a});
+  if(a>0){ const ef=effect({type:F.type,payer:F.payer,amount:a,split:F.split==="half"?null:F.split});
+    if(Math.abs(ef)<0.005){ p.textContent="היתרה לא תשתנה ("+(F.type==="income"?"ההכנסה כולה של מי שקיבל אותה":"מי ששילם מממן את כל ההוצאה")+")."; return; }
     const s=document.createElement("span"); s.className="ltr"; s.textContent=money(ef);
     p.append("היתרה תזוז ב־",s," לטובת "+(ef>0?S.nameA:S.nameB)+"."); }
 }
@@ -864,6 +882,7 @@ let descMap=new Map();
 function openEntry(e, preset){
   descMap=fillDatalist();
   F = e ? {id:e.id,type:e.type,payer:e.payer,cat:e.category||""} : Object.assign({type:"expense",payer:"a",cat:""},preset||{});
+  F.split = (e&&soleOf(e)) || "half";
   $("entryTitle").textContent = e?"עריכת רישום":(F.type==="transfer"?"רישום התחשבנות":"רישום חדש");
   $("fAmt").value = e? e.amount : (preset&&preset.amount?preset.amount:"");
   $("fDesc").value = e? (e.description||"") : "";
@@ -881,7 +900,7 @@ function renderFormKids(){ renderKidPicker("kidChips",()=>F.kids,v=>{ F.kids=v; 
 $("fDesc").addEventListener("input",()=>{ if(!F.kidsTouched){ F.kids=detectKids($("fDesc").value); renderFormKids(); } });
 $("fDesc").addEventListener("change",()=>{
   const prev=descMap.get($("fDesc").value.trim());
-  if(prev && !F.id){ if(!F.cat && prev.category) F.cat=prev.category; if(prev.type!=="transfer"){ F.type=prev.type; F.payer=prev.payer; }
+  if(prev && !F.id){ if(!F.cat && prev.category) F.cat=prev.category; if(prev.type!=="transfer"){ F.type=prev.type; F.payer=prev.payer; F.split=soleOf(prev)||"half"; }
     if(!F.kidsTouched && kidsOf(prev).length){ F.kids=kidsOf(prev).slice(); renderFormKids(); }
     renderCats(); updateForm(); }
 });
@@ -898,6 +917,16 @@ $("typeSeg").addEventListener("click",ev=>{ const b=ev.target.closest("button");
     if(Math.abs(bal)>=0.005){ $("fAmt").value=Math.round(Math.abs(bal)*100)/100; F.payer=bal>0?"b":"a"; }
   }
   renderCats(); updateForm(); });
+function renderSplitSeg(segId,lblId,type,v){
+  const seg=$(segId); if(!seg) return;
+  $(lblId).textContent = type==="income" ? "של מי ההכנסה?" : "על חשבון מי?";
+  const bs=seg.querySelectorAll("button");
+  bs[0].textContent="חצי־חצי";
+  bs[1].textContent=(type==="income"?"רק של ":"רק ")+S.nameA;
+  bs[2].textContent=(type==="income"?"רק של ":"רק ")+S.nameB;
+  setSeg(segId,v);
+}
+$("splitSeg").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; F.split=b.dataset.v; updateForm(); });
 $("whoSeg").addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; F.payer=b.dataset.v; updateForm(); });
 $("fAmt").addEventListener("input",updateForm);
 $("fDate").addEventListener("change",updateForm);
@@ -910,6 +939,7 @@ $("fSave").onclick=async()=>{
   if(!date){ $("fErr").textContent="יש לבחור תאריך."; return; }
   const data=withKids({type:F.type,payer:F.payer,amount:Math.round(amount*100)/100,date,
     description:F.type==="transfer"?"":$("fDesc").value.trim(),category:F.type==="transfer"?"":F.cat},F.type==="transfer"?[]:F.kids);
+  if(S.splitOk) data.split = F.type==="transfer"||F.split==="half" ? null : F.split;
   if(S.rcptOk) data.receipts = F.type==="transfer" ? [] : F.rcpt.map(r=>({path:r.path,name:r.name,type:r.type,size:r.size}));
   if(F.rcptBusy){ $("fErr").textContent="הקבלה עדיין עולה. רגע אחד."; return; }
   $("fSave").disabled=true;
@@ -934,8 +964,9 @@ async function offerRecurringUpdate(recId,d){
   if((t.category||"")!==(d.category||"")) upd.category=d.category;
   if(t.payer!==d.payer) upd.payer=d.payer;
   if(S.kidsOk && !sameKids(kidsOf(t),kidsOf(d))) upd.kids=kidsOf(d).slice();
+  if(S.splitOk && soleOf(t)!==soleOf(d)) upd.split=soleOf(d);
   if(!Object.keys(upd).length) return false;
-  const kt=x=>kidsOf(x).length?kidsText(kidsOf(x)):null;
+  const kt=x=>[kidsOf(x).length?kidsText(kidsOf(x)):null,soleText(x)||null].filter(Boolean).join(" · ")||null;
   const now=[t.description||(t.type==="expense"?"הוצאה":"הכנסה"),money(t.amount),nm(t.payer),kt(t)].filter(Boolean).join(" · ");
   const next=[d.description||(d.type==="expense"?"הוצאה":"הכנסה"),money(d.amount),nm(d.payer),kt(d)].filter(Boolean).join(" · ");
   if(!confirm("זה רישום של קבועה.\nלעדכן גם את הקבועה, כך שמהפעם הבאה יירשם:\n"+next+"\n(במקום: "+now+")\n\nביטול = השינוי חל רק על הרישום הזה.")) return false;
@@ -1218,9 +1249,10 @@ const loadSheetJS=()=>loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.
 const X = {
   font:"Arial", money:'"₪"#,##0.00;-"₪"#,##0.00;"₪"0', date:"dd/mm/yyyy",
   navy:"FF1E2940", line:"FFD5DBD3",
-  exp:"FFC46A2A", expL:"FFFBEFE4", inc:"FF2A8577", incL:"FFE2F2EF", tr:"FF5B5FA0", trL:"FFE9EAF5",
+  exp:"FFC46A2A", expL:"FFFBEFE4", inc:"FF2A8577", incL:"FFE2F2EF", tr:"FF5B5FA0", trL:"FFE9EAF5", sole:"FF7A6A2E", soleL:"FFF6F0DC",
   zebra:"FFF7F8F6", a:"FF2F6DB5", b:"FFA8458A"
 };
+const soleDesc=e=>(e.type==="income"?"הכנסה: ":"")+(e.description||(e.type==="income"?"הכנסה":"הוצאה"))+" ("+soleText(e)+")";
 const fill = c => ({type:"pattern",pattern:"solid",fgColor:{argb:c}});
 const border = () => { const s={style:"thin",color:{argb:X.line}}; return {top:s,bottom:s,left:s,right:s}; };
 const toDate = s => { const [y,m,d]=s.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)); };
@@ -1255,7 +1287,8 @@ function buildMonthSheet(wb, ym, opt){
   const [y,m]=ym.split("-").map(Number);
   const ws=wb.addWorksheet(MONTHS[m-1]+" "+y,{views:[{rightToLeft:true,showGridLines:false}],
     pageSetup:{orientation:"portrait",fitToPage:true,fitToWidth:1,fitToHeight:0,paperSize:9}});
-  const items=S.entries.filter(e=>e.date.slice(0,7)===ym).sort((a,b)=>a.date.localeCompare(b.date)||String(a.created_at).localeCompare(String(b.created_at)));
+  const all=S.entries.filter(e=>e.date.slice(0,7)===ym).sort((a,b)=>a.date.localeCompare(b.date)||String(a.created_at).localeCompare(String(b.created_at)));
+  const items=all.filter(e=>!soleOf(e)), sole=all.filter(e=>soleOf(e));
   const B=S.nameB, A=S.nameA;
   const keys=[]; if(opt.date) keys.push("date"); keys.push("desc"); if(opt.cat) keys.push("cat"); if(opt.kid) keys.push("kid"); keys.push("b","a");
   const N=keys.length, ci=k=>keys.indexOf(k)+1, L=k=>colL(ci(k)), LAST=colL(N), LBL_END=colL(ci("b")-1);
@@ -1270,20 +1303,20 @@ function buildMonthSheet(wb, ym, opt){
   ws.addRow([]).height=8;
 
   const section=(type,title,head,headL,totLabel)=>{
-    const rows=items.filter(e=>e.type===type);
+    const rows=type==="sole"?sole:items.filter(e=>e.type===type);
     const hr=ws.addRow(vals({date:"תאריך",desc:title,cat:"קטגוריה",kid:"ילד",b:B,a:A}));
     styleRow(hr,keys,{bg:head,color:"FFFFFFFF",bold:true,size:12,height:24});
     const first=hr.number+1;
     rows.forEach((e,i)=>{
-      const r=ws.addRow(vals({date:toDate(e.date),desc:type==="transfer"?transferText(e):(e.description||""),cat:e.category||"",kid:kidsText(kidsOf(e)),
+      const r=ws.addRow(vals({date:toDate(e.date),desc:type==="transfer"?transferText(e):type==="sole"?soleDesc(e):(e.description||""),cat:e.category||"",kid:kidsText(kidsOf(e)),
         b:e.payer==="b"?+e.amount:null,a:e.payer==="a"?+e.amount:null}));
       styleRow(r,keys,{bg:i%2?X.zebra:"FFFFFFFF",height:20});
     });
     if(!rows.length){ const r=ws.addRow(vals({desc:"אין רישומים"})); styleRow(r,keys,{color:"FF8A919C",height:20}); }
     const last=ws.lastRow.number;
     const tr=ws.addRow(vals({desc:totLabel,
-      b:{formula:`SUM(${L("b")}${first}:${L("b")}${last})`, result:sumBy(rows,type,"b")},
-      a:{formula:`SUM(${L("a")}${first}:${L("a")}${last})`, result:sumBy(rows,type,"a")}}));
+      b:{formula:`SUM(${L("b")}${first}:${L("b")}${last})`, result:rows.filter(e=>e.payer==="b").reduce((s,e)=>s+(+e.amount),0)},
+      a:{formula:`SUM(${L("a")}${first}:${L("a")}${last})`, result:rows.filter(e=>e.payer==="a").reduce((s,e)=>s+(+e.amount),0)}}));
     styleRow(tr,keys,{bg:headL,bold:true,height:22});
     for(let r=first;r<=tr.number;r++){
       if(opt.date) ws.getCell(L("date")+r).numFmt=X.date;
@@ -1307,6 +1340,13 @@ function buildMonthSheet(wb, ym, opt){
   const iB=sumBy(items,"income","b"), iA=sumBy(items,"income","a");
   const iCalc=labelRow("חישוב הכנסות",{formula:`(${la}${iTot}-${lb}${iTot})/2`,result:(iA-iB)/2},{bg:X.incL,bold:true,height:22});
   const parts=[`${lb}${eCalc}`,`${lb}${iCalc}`]; let result=(eB-eA)/2+(iA-iB)/2;
+  if(sole.length){
+    ws.addRow([]).height=10;
+    section("sole","על חשבון הורה אחד (לא חצי־חצי)",X.sole,X.soleL,'סה"כ');
+    const sv=Math.round(-100*sole.reduce((s,e)=>s+effect(e),0))/100;
+    const sc=labelRow("חישוב — על חשבון הורה אחד",sv,{bg:X.soleL,bold:true,height:22});
+    parts.push(`${lb}${sc}`); result+=sv;
+  }
   const hasTr=items.some(e=>e.type==="transfer");
   if(hasTr){
     ws.addRow([]).height=10;
@@ -1368,7 +1408,7 @@ $("xCancel").onclick=closeSheets;
 const loadJsPDF=()=>loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",()=>!!(window.jspdf&&window.jspdf.jsPDF));
 const R = { W:1240, PAGE_H:1754, M:56, FONT:'"Assistant","Segoe UI",Arial,sans-serif',
   navy:"#1E2940", line:"#D5DBD3", ink:"#1E2940", muted:"#66707F", zebra:"#F7F8F6",
-  exp:"#C46A2A", expL:"#FBEFE4", inc:"#2A8577", incL:"#E2F2EF", tr:"#5B5FA0", trL:"#E9EAF5",
+  exp:"#C46A2A", expL:"#FBEFE4", inc:"#2A8577", incL:"#E2F2EF", tr:"#5B5FA0", trL:"#E9EAF5", sole:"#7A6A2E", soleL:"#F6F0DC",
   a:"#2F6DB5", b:"#A8458A", plus:"#3F7A5A", minus:"#A94F38", sumBg:"#EFF1EC" };
 const fnt=(px,w)=>(w||400)+" "+px+"px "+R.FONT;
 
@@ -1428,19 +1468,21 @@ function drawRows(ctx,cols,pos,rows,y){
 }
 function monthReport(ym,opt){
   const [y,m]=ym.split("-").map(Number);
-  const items=S.entries.filter(e=>e.date.slice(0,7)===ym).sort((a,b)=>a.date.localeCompare(b.date)||String(a.created_at).localeCompare(String(b.created_at)));
+  const all=S.entries.filter(e=>e.date.slice(0,7)===ym).sort((a,b)=>a.date.localeCompare(b.date)||String(a.created_at).localeCompare(String(b.created_at)));
+  const items=all.filter(e=>!soleOf(e)), sole=all.filter(e=>soleOf(e));
   const cols=[]; if(opt.date) cols.push({key:"date",title:"תאריך",num:true});
   cols.push({key:"desc",title:"",flex:true}); if(opt.cat) cols.push({key:"cat",title:"קטגוריה"}); if(opt.kid) cols.push({key:"kid",title:"ילד"});
   cols.push({key:"b",title:S.nameB,num:true,color:R.b,min:150},{key:"a",title:S.nameA,num:true,color:R.a,min:150});
   const rows=[{k:"title",text:"סיכום תשלומים לחודש "+MONTHS[m-1]+" "+y},{k:"gap",h:18}];
   const dmy=d=>d.slice(8,10)+"/"+d.slice(5,7)+"/"+d.slice(0,4);
   const section=(type,title,bg,bgL,tot)=>{
-    const list=items.filter(e=>e.type===type);
+    const list=type==="sole"?sole:items.filter(e=>e.type===type);
     rows.push({k:"head",bg,cells:{date:"תאריך",desc:title,cat:"קטגוריה",kid:"ילד",b:S.nameB,a:S.nameA}});
-    list.forEach((e,i)=>rows.push({k:"row",zebra:i%2,cells:{date:dmy(e.date),desc:type==="transfer"?transferText(e):(e.description||""),
+    list.forEach((e,i)=>rows.push({k:"row",zebra:i%2,cells:{date:dmy(e.date),desc:type==="transfer"?transferText(e):type==="sole"?soleDesc(e):(e.description||""),
       cat:e.category||"",kid:kidsText(kidsOf(e)),b:e.payer==="b"?money(e.amount):null,a:e.payer==="a"?money(e.amount):null}}));
     if(!list.length) rows.push({k:"row",cells:{desc:"אין רישומים"},colors:{desc:R.muted}});
-    rows.push({k:"total",bg:bgL,cells:{desc:tot,b:money(sumBy(list,type,"b")),a:money(sumBy(list,type,"a"))}});
+    const pt=p=>list.filter(e=>e.payer===p).reduce((s,e)=>s+(+e.amount),0);
+    rows.push({k:"total",bg:bgL,cells:{desc:tot,b:money(pt("b")),a:money(pt("a"))}});
   };
   section("expense","סוג הוצאה",R.exp,R.expL,'סה"כ הוצאות');
   const eB=sumBy(items,"expense","b"), eA=sumBy(items,"expense","a"), iB=sumBy(items,"income","b"), iA=sumBy(items,"income","a");
@@ -1449,6 +1491,11 @@ function monthReport(ym,opt){
   section("income","סוג הכנסה / החזר",R.inc,R.incL,'סה"כ הכנסות');
   rows.push({k:"label",bg:R.incL,text:"חישוב הכנסות",at:"b",value:sgn((iA-iB)/2)});
   let result=(eB-eA)/2+(iA-iB)/2;
+  if(sole.length){
+    const sv=Math.round(-100*sole.reduce((s,e)=>s+effect(e),0))/100;
+    rows.push({k:"gap"}); section("sole","על חשבון הורה אחד (לא חצי־חצי)",R.sole,R.soleL,'סה"כ');
+    rows.push({k:"label",bg:R.soleL,text:"חישוב — על חשבון הורה אחד",at:"b",value:sgn(sv)}); result+=sv;
+  }
   const hasTr=items.some(e=>e.type==="transfer");
   if(hasTr){ rows.push({k:"gap"}); section("transfer","העברות ביניכם",R.tr,R.trL,'סה"כ העברות'); result+=sumBy(items,"transfer","b")-sumBy(items,"transfer","a"); }
   rows.push({k:"gap"},{k:"label",bg:R.navy,fg:"#fff",size:26,text:"סיכום סופי",at:"b",value:sgn(result)});

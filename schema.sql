@@ -55,3 +55,7 @@ create policy "hetzi receipts change own" on storage.objects for update to authe
   using (bucket_id = 'hetzi-receipts' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "hetzi receipts delete own" on storage.objects for delete to authenticated
   using (bucket_id = 'hetzi-receipts' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- מימון של הורה אחד (update-split.sql)
+alter table public.hetzi_entries   add column if not exists split text check (split in ('a','b'));
+alter table public.hetzi_recurring add column if not exists split text check (split in ('a','b'));
